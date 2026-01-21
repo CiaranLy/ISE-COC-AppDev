@@ -4,7 +4,7 @@
 +------------------+------------------+---------------------+------------------+------------------+-----------------+
 |        id        |   timestamp_utc  |  data_collector_id  |     graph_id     |    graph_name    |     content     |
 +------------------+------------------+---------------------+------------------+------------------+-----------------+
-|  INT (PK)        |  DATETIME        |  INT (FK)           |  INT             |  VARCHAR         |  TEXT           |
+|  INT (PK)        |  DATETIME        |  INT (FK)           |  INT             |  VARCHAR         |  Int            |
 +------------------+------------------+---------------------+------------------+------------------+-----------------+
 ```
 
@@ -14,7 +14,7 @@ id -> serverside identifier (not needed in json input)
 timestamp_utc -> time of data collection
 data_collector_id(coll-id) -> identifier for a specific collector (will need to message server for the latest id (how many collecters present + 1) before sending data to have the system be fully autonomous)
 graph_id -> numerical id for a graph for a specific collecter (each collecter will have graph 1)
-content -> string of data to be graphed
+content -> data to be graphed
 
 ## Aggregator Process Flow
 1. Server selects all coll-id to find highest numerical value

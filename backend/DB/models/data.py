@@ -1,6 +1,6 @@
 """Data model."""
 
-from sqlalchemy import Column, BigInteger, Integer, ForeignKey, Float, DateTime, func
+from sqlalchemy import Column, Integer, ForeignKey, Float, DateTime, func
 from sqlalchemy.orm import relationship
 
 from DB.models.base import Base

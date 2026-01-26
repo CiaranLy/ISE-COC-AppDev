@@ -11,7 +11,7 @@ from .base import AsyncRepository
 class DataRepository(AsyncRepository[Data]):
     model_cls = Data
 
-    async def find_by_collector(
+    async def find_by_collector_and_graph_type(
         self, collector_id: int, graph_type_id: Optional[int] = None, limit: int = 100
     ) -> List[Data]:
         query = select(Data).where(Data.collector_id == collector_id)

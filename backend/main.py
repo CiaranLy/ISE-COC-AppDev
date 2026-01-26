@@ -1,9 +1,18 @@
 from contextlib import asynccontextmanager
+from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from schemas import (
+    CollectorCreate,
+    CollectorRead,
+    DataCreate,
+    DataRead,
+    GraphTypeBase,
+    GraphTypeRead,
+)
 from config import API_TITLE, API_VERSION
 from DB.database import get_async_session, init_db
 from DB.repositories import CollectorRepository, DataRepository, GraphTypeRepository
@@ -37,76 +46,72 @@ async def health():
 
 
 # GraphType Endpoints
-@app.post("/create_graph_type")
+@app.post("/create_graph_type", response_model=GraphTypeRead)
 async def create_graph_type(
-    name: str, unit: str, session: AsyncSession = Depends(get_async_session)
+    graph_type: GraphTypeBase, session: AsyncSession = Depends(get_async_session)
 ):
     repo = GraphTypeRepository(session)
-    existing = await repo.find_by_name(name)
+    existing = await repo.find_by_name(graph_type.name)
     if existing:
-        return {"id": existing.id, "name": existing.name, "unit": existing.unit}
+        return existing
     
-    graph_type = await repo.create(name=name, unit=unit)
-    return {"id": graph_type.id, "name": graph_type.name, "unit": graph_type.unit}
+    new_graph_type = await repo.create(name=graph_type.name, unit=graph_type.unit)
+    return new_graph_type
 
 
-@app.get("/graph_types")
+@app.get("/graph_types", response_model=List[GraphTypeRead])
 async def graph_types(session: AsyncSession = Depends(get_async_session)):
     repo = GraphTypeRepository(session)
     types = await repo.get_all()
-    return [{"id": t.id, "name": t.name, "unit": t.unit} for t in types]
+    return types
 
 
 # Collector Endpoints
-@app.post("/create_collector")
+@app.post("/create_collector", response_model=CollectorRead)
 async def create_collector(
-    display_name: str, session: AsyncSession = Depends(get_async_session)
+    collector: CollectorCreate, session: AsyncSession = Depends(get_async_session)
 ):
     repo = CollectorRepository(session)
-    existing = await repo.find_by_display_name(display_name)
+    existing = await repo.find_by_display_name(collector.display_name)
     if existing:
-        return {"id": existing.id, "display_name": existing.display_name}
+        return existing
     
-    collector = await repo.create(display_name=display_name)
-    return {"id": collector.id, "display_name": collector.display_name}
+    new_collector = await repo.create(display_name=collector.display_name)
+    return new_collector
 
 
-@app.get("/collectors")
+@app.get("/collectors", response_model=List[CollectorRead])
 async def collectors(session: AsyncSession = Depends(get_async_session)):
     repo = CollectorRepository(session)
     collectors = await repo.get_all()
-    return [{"id": c.id, "display_name": c.display_name} for c in collectors]
+    return collectors
 
 
-@app.get("/collector/{collector_id}")
+@app.get("/collector/{collector_id}", response_model=CollectorRead)
 async def collector(collector_id: int, session: AsyncSession = Depends(get_async_session)):
     repo = CollectorRepository(session)
     collector = await repo.get_by_id(collector_id)
     if not collector:
         raise HTTPException(status_code=404, detail="Collector not found")
-    return {"id": collector.id, "display_name": collector.display_name}
+    return collector
 
 
 # Data Endpoints
-@app.post("/create_data")
+@app.post("/create_data", response_model=DataRead)
 async def create_data(
-    collector_id: int,
-    graph_type_id: int,
-    content: float,
+    data: DataCreate,
     session: AsyncSession = Depends(get_async_session),
 ):
     repo = DataRepository(session)
-    data = await repo.create(collector_id=collector_id, graph_type_id=graph_type_id, content=content)
-    return {
-        "id": data.id,
-        "collector_id": data.collector_id,
-        "graph_type_id": data.graph_type_id,
-        "timestamp_utc": data.timestamp_utc,
-        "content": data.content,
-    }
+    new_data = await repo.create(
+        collector_id=data.collector_id, 
+        graph_type_id=data.graph_type_id, 
+        content=data.content
+    )
+    return new_data
 
 
-@app.get("/data")
+@app.get("/data", response_model=List[DataRead])
 async def data(
     collector_id: int,
     graph_type_id: int | None = None,
@@ -114,13 +119,5 @@ async def data(
     session: AsyncSession = Depends(get_async_session),
 ):
     repo = DataRepository(session)
-    data = await repo.find_by_collector_and_graph_type(collector_id, graph_type_id, limit)
-    return [
-        {
-            "id": d.id,
-            "graph_type_id": d.graph_type_id,
-            "timestamp_utc": d.timestamp_utc,
-            "content": d.content,
-        }
-        for d in data
-    ]
+    data_points = await repo.find_by_collector_and_graph_type(collector_id, graph_type_id, limit)
+    return data_points

@@ -183,11 +183,18 @@ async def example():
         graph_type_repo = GraphTypeRepository(session)
         
         # 1. Get or create Graph Types
-        cpu = await graph_type_repo.get_or_create(name="CPU Usage", unit="%")
-        ram = await graph_type_repo.get_or_create(name="RAM Usage", unit="MB")
+        cpu = await graph_type_repo.find_by_name("CPU Usage")
+        if not cpu:
+            cpu = await graph_type_repo.create(name="CPU Usage", unit="%")
+            
+        ram = await graph_type_repo.find_by_name("RAM Usage")
+        if not ram:
+            ram = await graph_type_repo.create(name="RAM Usage", unit="MB")
         
-        # 2. Create collector
-        sensor = await collector_repo.create(display_name="Warehouse Sensor A")
+        # 2. Get or create collector
+        sensor = await collector_repo.find_by_display_name("Warehouse Sensor A")
+        if not sensor:
+            sensor = await collector_repo.create(display_name="Warehouse Sensor A")
         
         # 3. Add CPU data
         await data_repo.create(

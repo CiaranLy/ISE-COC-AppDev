@@ -83,7 +83,7 @@ async def collector(collector_id: int, session: AsyncSession = Depends(get_async
     repo = CollectorRepository(session)
     collector = await repo.get_by_id(collector_id)
     if not collector:
-        return {"error": "Collector not found"}
+        raise HTTPException(status_code=404, detail="Collector not found")
     return {"id": collector.id, "display_name": collector.display_name}
 
 

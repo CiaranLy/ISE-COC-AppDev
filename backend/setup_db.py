@@ -1,7 +1,6 @@
 """Database setup."""
 
 import asyncio
-import sys
 from DB.database import async_engine, init_db
 from sqlalchemy import text
 

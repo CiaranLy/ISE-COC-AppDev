@@ -114,7 +114,7 @@ async def data(
     session: AsyncSession = Depends(get_async_session),
 ):
     repo = DataRepository(session)
-    data = await repo.find_by_collector(collector_id, graph_type_id, limit)
+    data = await repo.find_by_collector_and_graph_type(collector_id, graph_type_id, limit)
     return [
         {
             "id": d.id,

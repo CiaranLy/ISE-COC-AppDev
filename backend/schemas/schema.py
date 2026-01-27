@@ -11,7 +11,7 @@ class DataIngest(BaseModel):
     collector_name: str
     content: float
     unit: str
-    timestamp: Optional[datetime] = None
+    timestamp: datetime
 
     model_config = ConfigDict(from_attributes=True)
 

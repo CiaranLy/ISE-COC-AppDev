@@ -73,20 +73,14 @@ async def aggregate_data(
     data_repo = DataRepository(session)
     
     # Use provided timestamp or default to now
-    if data.timestamp:
-        new_data = await data_repo.create(
-            collector_id=collector.id,
-            graph_id=graph.id,
-            content=data.content,
-            timestamp_utc=data.timestamp
-        )
-    else:
-        new_data = await data_repo.create(
-            collector_id=collector.id,
-            graph_id=graph.id,
-            content=data.content
-        )
-    
+
+    new_data = await data_repo.create(
+        collector_id=collector.id,
+        graph_id=graph.id,
+        content=data.content,
+        timestamp_utc=data.timestamp
+    )
+
     return DataIngestResponse(
         success=True,
         collector_id=collector.id,

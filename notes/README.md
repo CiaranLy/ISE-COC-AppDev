@@ -9,32 +9,34 @@ The system is built around three core concepts that work together:
 1.  **Collectors ("The Source")**
     *   These are the devices or systems you are monitoring (e.g., "Office PC", "Warehouse Sensor").
     *   Each collector is unique and acts as a container for all the data it generates.
+    *   Collectors are created automatically when data is first submitted.
 
-2.  **Graph Types ("The Definition")**
+2.  **Graphs ("The Definition")**
     *   These define *what* kind of data can be collected (e.g., "CPU Usage", "Temperature", "RAM Used").
-    *   A single graph type (like "CPU Usage") is defined once globally and can be used by *every* collector.
+    *   A single graph (like "CPU Usage") is defined once globally and can be used by *every* collector.
+    *   Graphs are created automatically when data is first submitted with a new collector name and unit.
     *   Think of these as the labels on a chart axis.
 
 3.  **Data ("The Readings")**
-    *   This is where everything connects. A Data point says: *"Collector X reported a value of Y for Graph Type Z at Time T."*
+    *   This is where everything connects. A Data point says: *"Collector X reported a value of Y for Graph Z at Time T."*
     *   For example:
         *   Collector: "Office PC"
-        *   Graph Type: "CPU Usage"
+        *   Graph: "CPU Usage" (unit: "%")
         *   Data: "45%"
     *   Later, the same collector can report:
         *   Collector: "Office PC"
-        *   Graph Type: "Temperature"
+        *   Graph: "Temperature" (unit: "°C")
         *   Data: "65°C"
 
 **Conceptual View:**
 ```
 Office PC (Collector)
-├──> Reports "CPU Usage" (GraphType) -----> Value: 45% (Data)
-├──> Reports "CPU Usage" (GraphType) -----> Value: 50% (Data)
-└──> Reports "Temperature" (GraphType) ---> Value: 60°C (Data)
+├──> Reports "CPU Usage" (Graph) -----> Value: 45% (Data)
+├──> Reports "CPU Usage" (Graph) -----> Value: 50% (Data)
+└──> Reports "Temperature" (Graph) ---> Value: 60°C (Data)
 
 Warehouse Sensor (Collector)
-└──> Reports "Temperature" (GraphType) ---> Value: 22°C (Data)
+└──> Reports "Temperature" (Graph) ---> Value: 22°C (Data)
 ```
 
 ## Quick Start
@@ -53,6 +55,77 @@ uvicorn main:app --reload
 
 Visit http://localhost:8000/docs
 
+## API Endpoints
+
+### POST /aggregator
+The main data ingestion endpoint. Automatically creates collectors and graphs as needed.
+
+**Request:**
+```json
+{
+  "collector_name": "temp_sensor_01",
+  "content": 23.5,
+  "unit": "celsius",
+  "timestamp": "2026-01-27T14:30:00"  // optional, defaults to now
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "collector_id": 1,
+  "graph_id": 1,
+  "data_id": 1,
+  "message": "Data ingested successfully"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://127.0.0.1:8000/aggregator \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collector_name": "temp_sensor_01",
+    "content": 23.5,
+    "unit": "celsius"
+  }'
+```
+
+### GET /graphs
+Retrieve all available graphs.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "temp_sensor_01",
+    "unit": "celsius"
+  },
+  {
+    "id": 2,
+    "name": "humidity_sensor",
+    "unit": "percent"
+  }
+]
+```
+
+**Example:**
+```bash
+curl http://127.0.0.1:8000/graphs
+```
+
+### GET /health
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "ok"
+}
+```
+
 ## Database Schema
 
 ### Collectors Table
@@ -70,11 +143,11 @@ CREATE TABLE collectors (
 - `display_name` - Unique name for the collector (e.g., "Warehouse Sensor A", "Office PC #1")
 - `time_created` - When the collector was registered
 
-### GraphTypes Table
+### Graphs Table
 Stores definitions for types of metrics (e.g., CPU, RAM)
 
 ```sql
-CREATE TABLE graph_types (
+CREATE TABLE graphs (
     id INTEGER PRIMARY KEY,
     name VARCHAR(255) UNIQUE NOT NULL,
     unit VARCHAR(50) NOT NULL
@@ -93,19 +166,19 @@ Stores time-series metrics from collectors
 CREATE TABLE data (
     id INTEGER PRIMARY KEY,
     collector_id INTEGER NOT NULL,
-    graph_type_id INTEGER NOT NULL,
+    graph_id INTEGER NOT NULL,
     timestamp_utc DATETIME DEFAULT CURRENT_TIMESTAMP,
     content FLOAT NOT NULL,
     FOREIGN KEY (collector_id) REFERENCES collectors(id) ON DELETE CASCADE,
-    FOREIGN KEY (graph_type_id) REFERENCES graph_types(id) ON DELETE CASCADE
+    FOREIGN KEY (graph_id) REFERENCES graphs(id) ON DELETE CASCADE
 );
 ```
 
 **Fields:**
 - `id` - Auto-incrementing primary key
 - `collector_id` - Foreign key to collectors table
-- `graph_type_id` - Foreign key to graph_types table (identifies what the data is)
-- `timestamp_utc` - When the metric was collected
+- `graph_id` - Foreign key to graphs table (identifies what the data is)
+- `timestamp_utc` - When the metric was collected (auto-generated or provided)
 - `content` - The metric value
 
 ### Relationships
@@ -114,110 +187,61 @@ CREATE TABLE data (
 - One collector can have many data points
 - Deleting a collector deletes all its data (CASCADE)
 
-**One-to-Many:** GraphType → Data
-- One graph type definition is used by many data points across different collectors
-- Deleting a graph type deletes all associated data (CASCADE)
+**One-to-Many:** Graph → Data
+- One graph definition is used by many data points across different collectors
+- Deleting a graph deletes all associated data (CASCADE)
 
-## API Endpoints
+## Usage Flow
 
-### Quick Test in Browser
-
-**Option 1: Interactive Docs (Best for Testing)**
-```
-http://localhost:8000/docs
-```
-Click any endpoint → "Try it out" → Fill values → "Execute"
-
-**Option 2: Browser URLs (GET endpoints only)**
-```
-http://localhost:8000/collectors
-http://localhost:8000/graph_types
-http://localhost:8000/collector/1
-http://localhost:8000/data?collector_id=1
-http://localhost:8000/health
-```
-
-**Option 3: Using curl (for POST endpoints)**
+### First Data Submission
 ```bash
-# Create graph types (seeded automatically, but you can add more)
-curl -X POST "http://localhost:8000/create_graph_type?name=Disk%20Usage&unit=%25"
+# Submit data from a new collector
+curl -X POST http://127.0.0.1:8000/aggregator \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collector_name": "office_temp",
+    "content": 21.5,
+    "unit": "celsius"
+  }'
 
-# Create collectors
-curl -X POST "http://localhost:8000/create_collector?display_name=Warehouse_Sensor_A"
-
-# Add data (referencing seeded graph types: 1=CPU, 2=RAM)
-curl -X POST "http://localhost:8000/create_data?collector_id=1&graph_type_id=1&content=75.5"
-curl -X POST "http://localhost:8000/create_data?collector_id=1&graph_type_id=2&content=8192"
-
-# View data
-curl "http://localhost:8000/data?collector_id=1"
+# System automatically:
+# 1. Creates collector "office_temp" (id: 1)
+# 2. Creates graph "office_temp" with unit "celsius" (id: 1)
+# 3. Creates data entry linking them (id: 1)
 ```
 
-### Endpoint Reference
+### Subsequent Data from Same Collector
+```bash
+# Submit more data from the same collector
+curl -X POST http://127.0.0.1:8000/aggregator \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collector_name": "office_temp",
+    "content": 22.1,
+    "unit": "celsius"
+  }'
 
-**Graph Types:**
-- `POST /create_graph_type?name=Name&unit=Unit` - Create/Get metric definition
-- `GET /graph_types` - List all available metric types
+# System:
+# 1. Finds existing collector "office_temp" (id: 1)
+# 2. Finds existing graph "office_temp" (id: 1)
+# 3. Creates new data entry (id: 2) with new timestamp
+```
 
-**Collectors:**
-- `POST /create_collector?display_name=Name` - Create collector
-- `GET /collectors` - List all collectors  
-- `GET /collector/{id}` - Get specific collector
+### Different Collector
+```bash
+# Submit data from a different collector
+curl -X POST http://127.0.0.1:8000/aggregator \
+  -H "Content-Type: application/json" \
+  -d '{
+    "collector_name": "warehouse_humidity",
+    "content": 55.0,
+    "unit": "percent"
+  }'
 
-**Data:**
-- `POST /create_data?collector_id=1&graph_type_id=1&content=75.5` - Add data point
-- `GET /data?collector_id=1&graph_type_id=1&limit=100` - Get data
-
-## Usage Examples
-
-### Python Code
-
-```python
-from DB.database import AsyncSessionLocal
-from DB.repositories import CollectorRepository, DataRepository, GraphTypeRepository
-
-async def example():
-    async with AsyncSessionLocal() as session:
-        collector_repo = CollectorRepository(session)
-        data_repo = DataRepository(session)
-        graph_type_repo = GraphTypeRepository(session)
-        
-        # 1. Get or create Graph Types
-        cpu = await graph_type_repo.find_by_name("CPU Usage")
-        if not cpu:
-            cpu = await graph_type_repo.create(name="CPU Usage", unit="%")
-            
-        ram = await graph_type_repo.find_by_name("RAM Usage")
-        if not ram:
-            ram = await graph_type_repo.create(name="RAM Usage", unit="MB")
-        
-        # 2. Get or create collector
-        sensor = await collector_repo.find_by_display_name("Warehouse Sensor A")
-        if not sensor:
-            sensor = await collector_repo.create(display_name="Warehouse Sensor A")
-        
-        # 3. Add CPU data
-        await data_repo.create(
-            collector_id=sensor.id,
-            graph_type_id=cpu.id,
-            content=75.5
-        )
-        
-        # 4. Add RAM data
-        await data_repo.create(
-            collector_id=sensor.id,
-            graph_type_id=ram.id,
-            content=8192.0
-        )
-        
-        # 5. Query recent CPU data
-        cpu_data = await data_repo.find_by_collector(
-            collector_id=sensor.id,
-            graph_type_id=cpu.id,
-            limit=100
-        )
-        
-        await session.commit()
+# System:
+# 1. Creates new collector "warehouse_humidity" (id: 2)
+# 2. Creates new graph "warehouse_humidity" (id: 2)
+# 3. Creates data entry (id: 3)
 ```
 
 ## Repository Pattern
@@ -226,7 +250,7 @@ All database operations go through repositories for clean separation:
 
 **Available Repositories:**
 - `CollectorRepository` - Manage collectors
-- `GraphTypeRepository` - Manage metric definitions
+- `GraphRepository` - Manage metric definitions
 - `DataRepository` - Manage time-series data
 
 **Base Methods (all repos have these):**
@@ -235,8 +259,14 @@ All database operations go through repositories for clean separation:
 - `get_all(limit=1000)` - Get all records
 - `delete(id)` - Delete by ID
 
+**Collector-specific:**
+- `find_by_display_name(name)` - Find collector by name
+
+**Graph-specific:**
+- `find_by_name(name)` - Find graph by name
+
 **Data-specific:**
-- `find_by_collector(collector_id, graph_type_id, limit)` - Get data for a collector
+- `find_by_collector_and_graph(collector_id, graph_id, limit)` - Get data for a collector
 
 ## Configuration
 
@@ -257,9 +287,13 @@ backend/
 ├── main.py                  # FastAPI app with endpoints
 ├── setup_db.py             # Database initialization
 ├── requirements.txt        # Python dependencies
-├── database_ise_coc.db     # SQLite database
+├── database_ise_coc.db     # SQLite database (created on setup)
 │
-└── DB/                      # Database layer
+├── schemas/                # Pydantic models
+│   ├── __init__.py
+│   └── schema.py          # API request/response schemas
+│
+└── DB/                     # Database layer
     ├── __init__.py
     ├── database.py         # Async engine & session management
     │
@@ -268,12 +302,25 @@ backend/
     │   ├── base.py        # DeclarativeBase
     │   ├── collector.py   # Collector model
     │   ├── data.py        # Data model
-    │   └── graph_type.py  # GraphType model
+    │   └── graph.py       # Graph model
     │
     └── repositories/       # Data access layer
         ├── __init__.py
         ├── base.py        # AsyncRepository (CRUD operations)
         ├── collector_repository.py
         ├── data_repository.py
-        └── graph_type_repository.py
+        └── graph_repository.py
+```
+
+## Code Style
+
+All imports use full folder paths for consistency:
+```python
+# Good
+from DB.models.collector import Collector
+from DB.repositories.graph_repository import GraphRepository
+
+# Avoid
+from .collector import Collector
+from ..repositories.graph_repository import GraphRepository
 ```

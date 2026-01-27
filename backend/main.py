@@ -59,9 +59,9 @@ async def aggregate_data(
         collector = await collector_repo.create(display_name=data.collector_name)
     
     # Step 2: Get or create graph
-    # Using collector_name as the graph name (you can adjust this logic)
+    # Using collector_name and unit as unique identifier
     graph_repo = GraphRepository(session)
-    graph = await graph_repo.find_by_name(data.collector_name)
+    graph = await graph_repo.find_by_name_and_unit(data.collector_name, data.unit)
     
     if not graph:
         graph = await graph_repo.create(

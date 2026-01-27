@@ -1,14 +1,14 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
+from typing import List
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas import DataIngest, DataIngestResponse
+from schemas import DataIngest, DataIngestResponse, GraphResponse
 from config import API_TITLE, API_VERSION
 from DB.database import get_async_session, init_db
-from DB.repositories import CollectorRepository, DataRepository, GraphTypeRepository
+from DB.repositories import CollectorRepository, DataRepository, GraphRepository
 
 
 @asynccontextmanager
@@ -48,7 +48,7 @@ async def aggregate_data(
     
     This endpoint:
     1. Creates or finds a collector by name
-    2. Creates or finds a graph_type by collector name and unit
+    2. Creates or finds a graph by collector name and unit
     3. Creates a data entry with the provided content and timestamp
     """
     # Step 1: Get or create collector
@@ -58,13 +58,13 @@ async def aggregate_data(
     if not collector:
         collector = await collector_repo.create(display_name=data.collector_name)
     
-    # Step 2: Get or create graph_type
-    # Using collector_name as the graph type name (you can adjust this logic)
-    graph_type_repo = GraphTypeRepository(session)
-    graph_type = await graph_type_repo.find_by_name(data.collector_name)
+    # Step 2: Get or create graph
+    # Using collector_name as the graph name (you can adjust this logic)
+    graph_repo = GraphRepository(session)
+    graph = await graph_repo.find_by_name(data.collector_name)
     
-    if not graph_type:
-        graph_type = await graph_type_repo.create(
+    if not graph:
+        graph = await graph_repo.create(
             name=data.collector_name,
             unit=data.unit
         )
@@ -76,21 +76,33 @@ async def aggregate_data(
     if data.timestamp:
         new_data = await data_repo.create(
             collector_id=collector.id,
-            graph_type_id=graph_type.id,
+            graph_id=graph.id,
             content=data.content,
             timestamp_utc=data.timestamp
         )
     else:
         new_data = await data_repo.create(
             collector_id=collector.id,
-            graph_type_id=graph_type.id,
+            graph_id=graph.id,
             content=data.content
         )
     
     return DataIngestResponse(
         success=True,
         collector_id=collector.id,
-        graph_type_id=graph_type.id,
+        graph_id=graph.id,
         data_id=new_data.id,
         message="Data ingested successfully"
     )
+
+
+@app.get("/graphs", response_model=List[GraphResponse])
+async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
+    """
+    Get all graphs.
+    
+    Returns a list of all available graphs with their IDs, names, and units.
+    """
+    graph_repo = GraphRepository(session)
+    graphs = await graph_repo.get_all()
+    return graphs

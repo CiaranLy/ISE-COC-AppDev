@@ -20,8 +20,17 @@ class DataIngestResponse(BaseModel):
     """Response schema for data ingestion."""
     success: bool
     collector_id: int
-    graph_type_id: int
+    graph_id: int
     data_id: int
     message: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GraphResponse(BaseModel):
+    """Response schema for graphs."""
+    id: int
+    name: str
+    unit: str
 
     model_config = ConfigDict(from_attributes=True)

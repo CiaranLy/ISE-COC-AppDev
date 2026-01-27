@@ -72,8 +72,6 @@ async def aggregate_data(
     # Step 3: Create data entry
     data_repo = DataRepository(session)
     
-    # Use provided timestamp or default to now
-
     new_data = await data_repo.create(
         collector_id=collector.id,
         graph_id=graph.id,

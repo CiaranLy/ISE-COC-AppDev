@@ -12,10 +12,11 @@ The system is built around three core concepts that work together:
     *   Collectors are created automatically when data is first submitted.
 
 2.  **Graphs ("The Definition")**
-    *   These define *what* kind of data can be collected (e.g., "CPU Usage", "Temperature", "RAM Used").
-    *   A single graph (like "CPU Usage") is defined once globally and can be used by *every* collector.
-    *   Graphs are created automatically when data is first submitted with a new collector name and unit.
-    *   Think of these as the labels on a chart axis.
+    *   These define *what* kind of data can be collected from a specific collector (e.g., "CPU Usage", "Temperature", "RAM Used").
+    *   Each graph belongs to one collector and is identified by the combination of collector_id and unit.
+    *   Graphs are created automatically when data is first submitted with a new unit for a collector.
+    *   When a collector is deleted, all its graphs are automatically deleted (CASCADE).
+    *   Think of these as the measurement channels for a specific device.
 
 3.  **Data ("The Readings")**
     *   This is where everything connects. A Data point says: *"Collector X reported a value of Y for Graph Z at Time T."*
@@ -31,13 +32,14 @@ The system is built around three core concepts that work together:
 **Conceptual View:**
 ```
 Office PC (Collector)
-├──> Reports "CPU Usage" (Graph) -----> Value: 45% (Data)
-├──> Reports "CPU Usage" (Graph) -----> Value: 50% (Data)
-└──> Reports "Temperature" (Graph) ---> Value: 60°C (Data)
+├──> Has Graph (unit: "%") ---------> Data: 45%, 50%, 48% (CPU Usage over time)
+└──> Has Graph (unit: "°C") --------> Data: 60°C, 62°C (Temperature over time)
 
 Warehouse Sensor (Collector)
-└──> Reports "Temperature" (Graph) ---> Value: 22°C (Data)
+└──> Has Graph (unit: "°C") --------> Data: 22°C, 21°C (Temperature over time)
 ```
+
+Note: Each collector owns its graphs. Deleting "Office PC" will delete both of its graphs and all associated data.
 
 ## Quick Start
 
@@ -100,13 +102,15 @@ Retrieve all available graphs.
 [
   {
     "id": 1,
-    "name": "temp_sensor_01",
-    "unit": "celsius"
+    "collector_id": 1,
+    "unit": "celsius",
+    "data_points": [...]
   },
   {
     "id": 2,
-    "name": "humidity_sensor",
-    "unit": "percent"
+    "collector_id": 2,
+    "unit": "percent",
+    "data_points": [...]
   }
 ]
 ```
@@ -144,20 +148,21 @@ CREATE TABLE collectors (
 - `time_created` - When the collector was registered
 
 ### Graphs Table
-Stores definitions for types of metrics (e.g., CPU, RAM)
+Stores measurement channels for collectors (e.g., temperature, humidity, CPU usage)
 
 ```sql
 CREATE TABLE graphs (
     id INTEGER PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL,
-    unit VARCHAR(50) NOT NULL
+    collector_id INTEGER NOT NULL,
+    unit VARCHAR(50) NOT NULL,
+    FOREIGN KEY (collector_id) REFERENCES collectors(id) ON DELETE CASCADE
 );
 ```
 
 **Fields:**
 - `id` - Auto-incrementing primary key
-- `name` - Name of the metric (e.g., "CPU Usage", "RAM Usage")
-- `unit` - Unit of measurement (e.g., "%", "MB", "°C")
+- `collector_id` - Foreign key to collectors table (which collector owns this graph)
+- `unit` - Unit of measurement (e.g., "%", "MB", "°C", "celsius", "percent")
 
 ### Data Table
 Stores time-series metrics from collectors
@@ -183,13 +188,19 @@ CREATE TABLE data (
 
 ### Relationships
 
+**One-to-Many:** Collector → Graphs
+- One collector can have many graphs (one per unit type)
+- Deleting a collector deletes all its graphs and data (CASCADE)
+
 **One-to-Many:** Collector → Data
 - One collector can have many data points
 - Deleting a collector deletes all its data (CASCADE)
 
 **One-to-Many:** Graph → Data
-- One graph definition is used by many data points across different collectors
+- One graph can have many data points (time-series)
 - Deleting a graph deletes all associated data (CASCADE)
+
+**Key Design:** Each graph belongs to exactly one collector. The combination of (collector_id, unit) uniquely identifies a graph.
 
 ## Usage Flow
 
@@ -206,7 +217,7 @@ curl -X POST http://127.0.0.1:8000/aggregator \
 
 # System automatically:
 # 1. Creates collector "office_temp" (id: 1)
-# 2. Creates graph "office_temp" with unit "celsius" (id: 1)
+# 2. Creates graph for collector_id=1 with unit "celsius" (id: 1)
 # 3. Creates data entry linking them (id: 1)
 ```
 
@@ -223,7 +234,7 @@ curl -X POST http://127.0.0.1:8000/aggregator \
 
 # System:
 # 1. Finds existing collector "office_temp" (id: 1)
-# 2. Finds existing graph "office_temp" (id: 1)
+# 2. Finds existing graph for collector_id=1 with unit "celsius" (id: 1)
 # 3. Creates new data entry (id: 2) with new timestamp
 ```
 
@@ -240,7 +251,7 @@ curl -X POST http://127.0.0.1:8000/aggregator \
 
 # System:
 # 1. Creates new collector "warehouse_humidity" (id: 2)
-# 2. Creates new graph "warehouse_humidity" (id: 2)
+# 2. Creates new graph for collector_id=2 with unit "percent" (id: 2)
 # 3. Creates data entry (id: 3)
 ```
 
@@ -263,7 +274,8 @@ All database operations go through repositories for clean separation:
 - `find_by_display_name(name)` - Find collector by name
 
 **Graph-specific:**
-- `find_by_name(name)` - Find graph by name
+- `find_by_collector_and_unit(collector_id, unit)` - Find graph by collector and unit
+- `get_all_with_data(limit)` - Get all graphs with data points and collector info
 
 **Data-specific:**
 - `find_by_collector_and_graph(collector_id, graph_id, limit)` - Get data for a collector

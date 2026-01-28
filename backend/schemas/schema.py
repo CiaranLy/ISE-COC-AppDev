@@ -41,8 +41,10 @@ class DataPoint(BaseModel):
 class GraphWithDataResponse(BaseModel):
     """Response schema for graphs with data points."""
     id: int
-    name: str
+    collector_id: int
     unit: str
     data_points: List[DataPoint]
+    collector_name: str
 
     model_config = ConfigDict(from_attributes=True)
+    

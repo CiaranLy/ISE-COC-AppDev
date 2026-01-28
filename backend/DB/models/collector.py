@@ -14,3 +14,4 @@ class Collector(Base):
     time_created = Column(DateTime, server_default=func.now())
 
     data_points = relationship("Data", back_populates="collector", cascade="all, delete-orphan")
+    graphs = relationship("Graph", back_populates="collector", cascade="all, delete-orphan")

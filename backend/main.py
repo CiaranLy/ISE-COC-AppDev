@@ -48,7 +48,7 @@ async def aggregate_data(
     
     This endpoint:
     1. Creates or finds a collector by name
-    2. Creates or finds a graph by collector name and unit
+    2. Creates or finds a graph by collector_id and unit
     3. Creates a data entry with the provided content and timestamp
     """
     # Step 1: Get or create collector
@@ -59,13 +59,13 @@ async def aggregate_data(
         collector = await collector_repo.create(display_name=data.collector_name)
     
     # Step 2: Get or create graph
-    # Using collector_name and unit as unique identifier
+    # Using collector_id and unit as unique identifier
     graph_repo = GraphRepository(session)
-    graph = await graph_repo.find_by_name_and_unit(data.collector_name, data.unit)
+    graph = await graph_repo.find_by_collector_and_unit(collector.id, data.unit)
     
     if not graph:
         graph = await graph_repo.create(
-            name=data.collector_name,
+            collector_id=collector.id,
             unit=data.unit
         )
     
@@ -93,8 +93,18 @@ async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
     """
     Get all graphs with their data points.
     
-    Returns a list of all available graphs with their IDs, names, units, and associated data points.
+    Returns a list of all available graphs with their IDs, collector_ids, units, and associated data points.
     """
     graph_repo = GraphRepository(session)
     graphs = await graph_repo.get_all_with_data()
-    return graphs
+    
+    return [
+        GraphWithDataResponse(
+            id=graph.id,
+            collector_id=graph.collector_id,
+            collector_name=graph.collector.display_name,
+            unit=graph.unit,
+            data_points=graph.data_points
+        )
+        for graph in graphs
+    ]

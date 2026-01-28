@@ -1,0 +1,11 @@
+# API and Server
+fastapi
+uvicorn
+
+# Database
+sqlalchemy[asyncio]>=2.0.0
+aiosqlite
+
+# Data Validation and Settings
+pydantic>=2.0.0
+pydantic-settings

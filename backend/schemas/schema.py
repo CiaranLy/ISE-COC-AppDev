@@ -1,7 +1,7 @@
 """Pydantic schema for data ingestion."""
 
 from datetime import datetime
-from typing import Optional
+from typing import List
 
 from pydantic import BaseModel, ConfigDict
 
@@ -27,10 +27,22 @@ class DataIngestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class GraphResponse(BaseModel):
-    """Response schema for graphs."""
+class DataPoint(BaseModel):
+    """Schema for individual data points."""
+    id: int
+    content: float
+    timestamp_utc: datetime
+    collector_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+
+class GraphWithDataResponse(BaseModel):
+    """Response schema for graphs with data points."""
     id: int
     name: str
     unit: str
+    data_points: List[DataPoint]
 
     model_config = ConfigDict(from_attributes=True)

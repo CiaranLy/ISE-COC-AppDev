@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas import DataIngest, DataIngestResponse, GraphResponse
+from schemas import DataIngest, DataIngestResponse, GraphWithDataResponse
 from config import API_TITLE, API_VERSION
 from DB.database import get_async_session, init_db
 from DB.repositories import CollectorRepository, DataRepository, GraphRepository
@@ -88,13 +88,13 @@ async def aggregate_data(
     )
 
 
-@app.get("/graphs", response_model=List[GraphResponse])
+@app.get("/graphs", response_model=List[GraphWithDataResponse])
 async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
     """
-    Get all graphs.
+    Get all graphs with their data points.
     
-    Returns a list of all available graphs with their IDs, names, and units.
+    Returns a list of all available graphs with their IDs, names, units, and associated data points.
     """
     graph_repo = GraphRepository(session)
-    graphs = await graph_repo.get_all()
+    graphs = await graph_repo.get_all_with_data()
     return graphs

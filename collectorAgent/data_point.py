@@ -1,0 +1,22 @@
+"""Data point model for the queue."""
+
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass
+class DataPoint:
+    """Represents a single data point to be sent to the backend."""
+    collector_name: str
+    content: float
+    unit: str
+    timestamp: datetime
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for API request."""
+        return {
+            "collector_name": self.collector_name,
+            "content": self.content,
+            "unit": self.unit,
+            "timestamp": self.timestamp.isoformat()
+        }

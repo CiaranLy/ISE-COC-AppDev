@@ -1,7 +1,7 @@
 """Pydantic schema for data ingestion."""
 
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -12,6 +12,7 @@ class DataIngest(BaseModel):
     content: float
     unit: str
     timestamp: datetime
+    message_id: Optional[str] = None  # For tracking acknowledgments
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,6 +24,8 @@ class DataIngestResponse(BaseModel):
     graph_id: int
     data_id: int
     message: str
+    message_id: Optional[str] = None  # Echo back for acknowledgment
+    acknowledged: bool = True  # Confirms receipt
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -47,4 +50,3 @@ class GraphWithDataResponse(BaseModel):
     collector_name: str
 
     model_config = ConfigDict(from_attributes=True)
-    

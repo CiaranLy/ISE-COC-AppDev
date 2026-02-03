@@ -1,0 +1,13 @@
+{
+    "api_base_url": "http://localhost:8000",
+    "collector_name": "default_collector",
+    "collection_interval_seconds": 5.0,
+    "batch_size": 10,
+    "flush_interval_seconds": 5.0,
+    "max_retries": 3,
+    "retry_delay_seconds": 2.0,
+    "queue_host": "localhost",
+    "queue_port": 5555,
+    "ack_timeout_seconds": 90,
+    "dlq_file": "dead_letter_queue.json"
+}

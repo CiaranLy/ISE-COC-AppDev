@@ -3,6 +3,12 @@ Queue Manager - Runs independently and receives data from collectors.
 
 Start this FIRST, then start collectors.
 
+Features:
+- Receives data from multiple collectors via TCP
+- Batches and sends data to the backend API
+- Tracks message acknowledgments
+- Moves unacknowledged messages to Dead Letter Queue (DLQ) after 90 seconds
+
 Usage:
     python queue_manager.py
 """
@@ -13,12 +19,14 @@ import socket
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import List
 
 import requests
 
 from data_point import DataPoint
+from dlq import DeadLetterQueue, PendingMessageTracker
 
 # Load config
 CONFIG_FILE = Path(__file__).parent / "config.json"
@@ -33,6 +41,8 @@ BATCH_SIZE = config["batch_size"]
 FLUSH_INTERVAL = config["flush_interval_seconds"]
 MAX_RETRIES = config["max_retries"]
 RETRY_DELAY = config["retry_delay_seconds"]
+ACK_TIMEOUT = config["ack_timeout_seconds"]
+DLQ_FILE = config["dlq_file"]
 
 
 class QueueManager:
@@ -42,18 +52,36 @@ class QueueManager:
         self.running = False
         self.server_socket = None
         
+        # DLQ and acknowledgment tracking
+        self.dlq = DeadLetterQueue(DLQ_FILE)
+        self.pending_tracker = PendingMessageTracker(timeout_seconds=ACK_TIMEOUT)
+        
     def send_data_point(self, data: dict) -> bool:
         """Send a single data point to the backend API with retries."""
+        # Generate message ID for tracking
+        message_id = str(uuid.uuid4())
+        data_with_id = {**data, "message_id": message_id}
+        
+        # Track as pending
+        self.pending_tracker.add(message_id, data)
+        
         for attempt in range(MAX_RETRIES):
             try:
                 response = requests.post(
                     AGGREGATOR_ENDPOINT,
-                    json=data,
-                    timeout=10
+                    json=data_with_id,
+                    timeout=30
                 )
                 
                 if response.status_code == 200:
-                    return True
+                    response_data = response.json()
+                    
+                    # Check for acknowledgment
+                    if response_data.get("acknowledged") and response_data.get("message_id") == message_id:
+                        self.pending_tracker.acknowledge(message_id)
+                        return True
+                    else:
+                        print(f"[Queue] Response missing acknowledgment for {message_id}")
                 else:
                     print(f"[Queue] API returned {response.status_code}: {response.text}")
                     
@@ -63,6 +91,7 @@ class QueueManager:
             if attempt < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAY)
         
+        # Failed after all retries - will be caught by timeout checker
         return False
 
     def send_batch(self, batch: List[dict]) -> tuple:
@@ -77,6 +106,23 @@ class QueueManager:
                 failed += 1
         
         return success, failed
+
+    def timeout_checker_loop(self):
+        """Background thread that checks for timed-out messages and moves them to DLQ."""
+        print(f"[Queue] Timeout checker started. Timeout: {ACK_TIMEOUT}s")
+        
+        while self.running:
+            time.sleep(5)  # Check every 5 seconds
+            
+            # Get timed out messages
+            timed_out = self.pending_tracker.get_timed_out()
+            
+            for message in timed_out:
+                self.dlq.add(message, f"No acknowledgment received within {ACK_TIMEOUT} seconds")
+            
+            if timed_out:
+                print(f"[Queue] Moved {len(timed_out)} message(s) to DLQ (timeout)")
+                print(f"[Queue] DLQ size: {self.dlq.count()}, Pending: {self.pending_tracker.count()}")
 
     def sender_loop(self):
         """Background thread that sends batched data to the API."""
@@ -154,6 +200,10 @@ class QueueManager:
         sender_thread = threading.Thread(target=self.sender_loop, daemon=True)
         sender_thread.start()
         
+        # Start timeout checker thread
+        timeout_thread = threading.Thread(target=self.timeout_checker_loop, daemon=True)
+        timeout_thread.start()
+        
         # Create server socket
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -163,13 +213,17 @@ class QueueManager:
             self.server_socket.listen(5)
             self.server_socket.settimeout(1.0)
             
-            print("=" * 50)
+            print("=" * 60)
             print("Queue Manager Started")
-            print("=" * 50)
+            print("=" * 60)
             print(f"Listening on {HOST}:{PORT}")
             print(f"Backend: {AGGREGATOR_ENDPOINT}")
             print(f"Batch size: {BATCH_SIZE}, Flush interval: {FLUSH_INTERVAL}s")
-            print("=" * 50)
+            print(f"ACK timeout: {ACK_TIMEOUT}s")
+            print(f"DLQ file: {DLQ_FILE}")
+            if self.dlq.count() > 0:
+                print(f"DLQ contains {self.dlq.count()} message(s) from previous session")
+            print("=" * 60)
             print("Waiting for collectors...")
             
             while self.running:
@@ -194,6 +248,13 @@ class QueueManager:
         """Stop the queue manager."""
         print("\n[Queue] Shutting down...")
         self.running = False
+        
+        # Move any remaining pending messages to DLQ
+        timed_out = self.pending_tracker.get_timed_out()
+        for message in timed_out:
+            self.dlq.add(message, "Shutdown before acknowledgment received")
+        
+        print(f"[Queue] Final DLQ size: {self.dlq.count()}")
 
 
 def main():

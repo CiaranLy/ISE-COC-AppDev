@@ -84,7 +84,9 @@ async def aggregate_data(
         collector_id=collector.id,
         graph_id=graph.id,
         data_id=new_data.id,
-        message="Data ingested successfully"
+        message="Data ingested successfully",
+        message_id=data.message_id,
+        acknowledged=True
     )
 
 

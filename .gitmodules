@@ -1,0 +1,3 @@
+[submodule "Pong"]
+	path = Pong
+	url = https://github.com/Bocksa/Pong.git

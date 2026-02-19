@@ -20,13 +20,13 @@ A React TypeScript web application that displays real-time metrics from the back
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         Website                                  │
-│                                                                  │
+│                         Website                                 │
+│                                                                 │
 │   1. Fetches /graphs from backend API                           │
 │   2. Groups graphs by collector_name                            │
 │   3. Renders each graph as an AreaChart                         │
 │   4. Repeats at configured refresh interval                     │
-│                                                                  │
+│                                                                 │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             ▼
@@ -34,21 +34,21 @@ A React TypeScript web application that displays real-time metrics from the back
                             │
                             ▼
 ┌───────────────────────────────────────────────────────────────┐
-│                      Backend API                               │
-│                                                                │
-│   Returns array of graphs with data_points:                    │
-│   [                                                            │
-│     {                                                          │
-│       id: 1,                                                   │
-│       collector_id: 1,                                         │
-│       collector_name: "office_pc",                             │
-│       unit: "cpu_percent",                                     │
-│       data_points: [                                           │
-│         { id: 1, content: 45.2, timestamp_utc: "..." },        │
-│         { id: 2, content: 48.1, timestamp_utc: "..." }         │
-│       ]                                                        │
-│     }                                                          │
-│   ]                                                            │
+│                      Backend API                              │
+│                                                               │
+│   Returns array of graphs with data_points:                   │
+│   [                                                           │
+│     {                                                         │
+│       id: 1,                                                  │
+│       collector_id: 1,                                        │
+│       collector_name: "office_pc",                            │
+│       unit: "cpu_percent",                                    │
+│       data_points: [                                          │
+│         { id: 1, content: 45.2, timestamp_utc: "..." },       │
+│         { id: 2, content: 48.1, timestamp_utc: "..." }        │
+│       ]                                                       │
+│     }                                                         │
+│   ]                                                           │
 └───────────────────────────────────────────────────────────────┘
 ```
 

@@ -24,6 +24,10 @@ class NetworkGameClient(
     private var localPlayerId: PlayerId? = null
     @Volatile
     private var gameState: GameState? = null
+    @Volatile
+    private var lastLatencyMs: Long = 0L
+    @Volatile
+    private var pingStartTimeMs: Long = 0L
     private val clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun connect(): Boolean {
@@ -135,6 +139,14 @@ class NetworkGameClient(
         return localPlayerId ?: throw IllegalStateException("Not connected to server")
     }
 
+    fun getLatencyMs(): Long = lastLatencyMs
+
+    fun measureLatency() {
+        if (!connected) return
+        pingStartTimeMs = System.currentTimeMillis()
+        sendMessage(NetworkMessage.Ping())
+    }
+
     private fun sendMessage(message: NetworkMessage) {
         if (writer != null) {
             try {
@@ -190,6 +202,12 @@ class NetworkGameClient(
             }
             is NetworkMessage.Error -> {
                 Log.e(TAG, "Server error: ${message.error}")
+            }
+            is NetworkMessage.Pong -> {
+                if (pingStartTimeMs > 0) {
+                    lastLatencyMs = System.currentTimeMillis() - pingStartTimeMs
+                    pingStartTimeMs = 0L
+                }
             }
             else -> {
                 Log.w(TAG, "Unexpected message type: ${message.messageType}")

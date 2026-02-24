@@ -72,6 +72,8 @@ object Constants {
     const val NETWORK_MSG_START_GAME = "START_GAME"
     const val NETWORK_MSG_START_GAME_RESPONSE = "START_GAME_RESPONSE"
     const val NETWORK_MSG_ERROR = "ERROR"
+    const val NETWORK_MSG_PING = "PING"
+    const val NETWORK_MSG_PONG = "PONG"
     const val NETWORK_MSG_FIELD_MESSAGE_TYPE = "messageType"
 
     const val MATCHMAKING_MSG_QUEUE_JOIN = "QUEUE_JOIN"

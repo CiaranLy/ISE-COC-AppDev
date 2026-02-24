@@ -89,7 +89,7 @@ object GameScreen {
         var isGameRunning by remember { mutableStateOf(false) }
 
         val telemetryService = remember { TelemetryService() }
-        var telemetryStarted by remember { mutableStateOf(false) }
+
 
         val localPlayerId = remember {
             try {
@@ -241,9 +241,10 @@ object GameScreen {
 
         LaunchedEffect(isGameRunning) {
             if (isGameRunning && localPlayerId != null) {
-                if (!telemetryStarted) {
+                var sessionStarted = false
+                if (!sessionStarted) {
                     telemetryService.startSession(gameMode)
-                    telemetryStarted = true
+                    sessionStarted = true
                 }
 
                 while (isGameRunning) {
@@ -287,6 +288,12 @@ object GameScreen {
         DisposableEffect(Unit) {
             onDispose {
                 gameServer.disconnect()
+                // End telemetry session on early exit if still active
+                val finalState = gameState
+                if (finalState != null && localPlayerId != null) {
+                    telemetryService.endSession(finalState, localPlayerId)
+                }
+                telemetryService.cleanup()
             }
         }
 

@@ -36,7 +36,7 @@ fun Navigation() {
     var aiClient by remember { mutableStateOf<AIClient?>(null) }
     var isFindingMatch by remember { mutableStateOf(false) }
     var showMatchmakingError by remember { mutableStateOf(false) }
-    var gameMode by remember { mutableStateOf("") }
+    var gameMode by remember { mutableStateOf("unknown") }
     val coroutineScope = rememberCoroutineScope()
 
     when (currentScreen) {

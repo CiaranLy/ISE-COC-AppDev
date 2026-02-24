@@ -7,6 +7,7 @@ import com.pong.mobile.game.PlayerId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -98,6 +99,11 @@ class TelemetryService {
             }
         }
 
+        sessionId = null
+    }
+
+    fun cleanup() {
+        serviceScope.cancel()
         sessionId = null
     }
 

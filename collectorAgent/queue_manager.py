@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List
 
@@ -43,6 +44,7 @@ MAX_RETRIES = config["max_retries"]
 RETRY_DELAY = config["retry_delay_seconds"]
 ACK_TIMEOUT = config["ack_timeout_seconds"]
 DLQ_FILE = config["dlq_file"]
+NUM_SENDER_WORKERS = config["num_sender_workers"]
 
 
 class QueueManager:
@@ -51,7 +53,8 @@ class QueueManager:
         self.queue_lock = threading.Lock()
         self.running = False
         self.server_socket = None
-        
+        self.executor = ThreadPoolExecutor(max_workers=NUM_SENDER_WORKERS)
+
         # DLQ and acknowledgment tracking
         self.dlq = DeadLetterQueue(DLQ_FILE)
         self.pending_tracker = PendingMessageTracker(timeout_seconds=ACK_TIMEOUT)
@@ -95,16 +98,17 @@ class QueueManager:
         return False
 
     def send_batch(self, batch: List[dict]) -> tuple:
-        """Send a batch of data points. Returns (success_count, failure_count)."""
+        """Send a batch of data points concurrently. Returns (success_count, failure_count)."""
         success = 0
         failed = 0
-        
-        for data in batch:
-            if self.send_data_point(data):
+
+        futures = {self.executor.submit(self.send_data_point, data): data for data in batch}
+        for future in as_completed(futures):
+            if future.result():
                 success += 1
             else:
                 failed += 1
-        
+
         return success, failed
 
     def timeout_checker_loop(self):
@@ -219,6 +223,7 @@ class QueueManager:
             print(f"Listening on {HOST}:{PORT}")
             print(f"Backend: {AGGREGATOR_ENDPOINT}")
             print(f"Batch size: {BATCH_SIZE}, Flush interval: {FLUSH_INTERVAL}s")
+            print(f"Sender workers: {NUM_SENDER_WORKERS}")
             print(f"ACK timeout: {ACK_TIMEOUT}s")
             print(f"DLQ file: {DLQ_FILE}")
             if self.dlq.count() > 0:
@@ -248,12 +253,15 @@ class QueueManager:
         """Stop the queue manager."""
         print("\n[Queue] Shutting down...")
         self.running = False
-        
+
+        # Wait for in-flight sends to complete before moving unacked messages to DLQ
+        self.executor.shutdown(wait=True)
+
         # Move any remaining pending messages to DLQ
         timed_out = self.pending_tracker.get_timed_out()
         for message in timed_out:
             self.dlq.add(message, "Shutdown before acknowledgment received")
-        
+
         print(f"[Queue] Final DLQ size: {self.dlq.count()}")
 
 

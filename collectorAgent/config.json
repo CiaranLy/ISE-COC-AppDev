@@ -9,5 +9,6 @@
     "queue_host": "localhost",
     "queue_port": 5555,
     "ack_timeout_seconds": 90,
-    "dlq_file": "dead_letter_queue.json"
+    "dlq_file": "dead_letter_queue.json",
+    "num_sender_workers": 4
 }

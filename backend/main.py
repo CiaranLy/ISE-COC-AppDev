@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schemas import DataIngest, DataIngestResponse, GraphWithDataResponse
-from config import API_TITLE, API_VERSION
+from config import API_TITLE, API_VERSION, UVICORN_HOST, UVICORN_PORT, UVICORN_WORKERS
 from DB.database import get_async_session, init_db
 from DB.repositories import CollectorRepository, DataRepository, GraphRepository
 
@@ -110,3 +110,13 @@ async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
         )
         for graph in graphs
     ]
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host=UVICORN_HOST,
+        port=UVICORN_PORT,
+        workers=UVICORN_WORKERS,
+    )

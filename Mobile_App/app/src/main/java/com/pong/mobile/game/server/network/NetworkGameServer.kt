@@ -283,6 +283,7 @@ class NetworkGameServer(
                     val newBallCollisionCount = currentState.ballCollisionCount + wallBounceCount + collisionResult.paddleCollisionCount
 
                     synchronized(gameStateLock) {
+                        val prevState = gameState!!
                         gameState = GameState(
                             ball = collisionResult.ball,
                             player1Paddle = updatedPlayer1Paddle,
@@ -292,7 +293,9 @@ class NetworkGameServer(
                             isGameOver = isGameOver,
                             ballFrozenUntil = ballFrozenUntil,
                             matchId = currentState.matchId,
-                            ballCollisionCount = newBallCollisionCount
+                            ballCollisionCount = newBallCollisionCount,
+                            player1PaddleHits = prevState.player1PaddleHits + if (collisionResult.player1PaddleHit) 1 else 0,
+                            player2PaddleHits = prevState.player2PaddleHits + if (collisionResult.player2PaddleHit) 1 else 0
                         )
                     }
 
@@ -400,6 +403,9 @@ class NetworkGameServer(
                     if (clients.size == Constants.MAX_PLAYERS && gameState != null) {
                         sendMessage(NetworkMessage.StartGameResponse(gameState = gameState!!))
                     }
+                }
+                is NetworkMessage.Ping -> {
+                    sendMessage(NetworkMessage.Pong())
                 }
                 else -> {
                     Log.w(TAG, "Unexpected message type: ${message.messageType}")

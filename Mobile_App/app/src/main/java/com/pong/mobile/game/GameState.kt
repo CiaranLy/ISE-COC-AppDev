@@ -9,7 +9,9 @@ data class GameState(
     val isGameOver: Boolean,
     val ballFrozenUntil: Long? = null,
     val matchId: String = "",
-    val ballCollisionCount: Int = 0
+    val ballCollisionCount: Int = 0,
+    val player1PaddleHits: Int = 0,
+    val player2PaddleHits: Int = 0
 )
 
 data class Ball(

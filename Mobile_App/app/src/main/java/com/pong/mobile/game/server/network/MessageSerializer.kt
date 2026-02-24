@@ -40,7 +40,9 @@ private data class SerializableGameState(
     val isGameOver: Boolean,
     val ballFrozenUntil: Long?,
     val matchId: String = "",
-    val ballCollisionCount: Int = 0
+    val ballCollisionCount: Int = 0,
+    val player1PaddleHits: Int = 0,
+    val player2PaddleHits: Int = 0
 )
 
 @Serializable
@@ -122,6 +124,8 @@ object MessageSerializer {
                 )
                 json.encodeToString(serializable)
             }
+            is NetworkMessage.Ping -> json.encodeToString(mapOf(Constants.NETWORK_MSG_FIELD_MESSAGE_TYPE to message.messageType))
+            is NetworkMessage.Pong -> json.encodeToString(mapOf(Constants.NETWORK_MSG_FIELD_MESSAGE_TYPE to message.messageType))
         }
     }
 
@@ -167,6 +171,8 @@ object MessageSerializer {
                 val error = json.decodeFromString<SerializableError>(jsonString)
                 NetworkMessage.Error(error = error.error)
             }
+            Constants.NETWORK_MSG_PING -> NetworkMessage.Ping()
+            Constants.NETWORK_MSG_PONG -> NetworkMessage.Pong()
             else -> throw IllegalArgumentException(Constants.ERROR_MESSAGE_UNKNOWN_MESSAGE_TYPE.format(messageType))
         }
     }
@@ -213,7 +219,9 @@ object MessageSerializer {
             isGameOver = state.isGameOver,
             ballFrozenUntil = state.ballFrozenUntil,
             matchId = state.matchId,
-            ballCollisionCount = state.ballCollisionCount
+            ballCollisionCount = state.ballCollisionCount,
+            player1PaddleHits = state.player1PaddleHits,
+            player2PaddleHits = state.player2PaddleHits
         )
     }
 
@@ -227,7 +235,9 @@ object MessageSerializer {
             isGameOver = state.isGameOver,
             ballFrozenUntil = state.ballFrozenUntil,
             matchId = state.matchId,
-            ballCollisionCount = state.ballCollisionCount
+            ballCollisionCount = state.ballCollisionCount,
+            player1PaddleHits = state.player1PaddleHits,
+            player2PaddleHits = state.player2PaddleHits
         )
     }
 }

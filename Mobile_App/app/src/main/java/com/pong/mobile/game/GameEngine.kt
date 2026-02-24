@@ -14,7 +14,9 @@ class GameEngine(
         val player1Score: Int,
         val player2Score: Int,
         val ballFrozenUntil: Long?,
-        val paddleCollisionCount: Int = 0
+        val paddleCollisionCount: Int = 0,
+        val player1PaddleHit: Boolean = false,
+        val player2PaddleHit: Boolean = false
     )
 
     fun update(deltaTime: Float, localPlayerDirection: Float, currentTimeMs: Long): GameState {
@@ -59,7 +61,9 @@ class GameEngine(
             isGameOver = isGameOver,
             ballFrozenUntil = ballFrozenUntil,
             matchId = currentState.matchId,
-            ballCollisionCount = newBallCollisionCount
+            ballCollisionCount = newBallCollisionCount,
+            player1PaddleHits = currentState.player1PaddleHits + if (collisionResult.player1PaddleHit) 1 else 0,
+            player2PaddleHits = currentState.player2PaddleHits + if (collisionResult.player2PaddleHit) 1 else 0
         )
 
         gameServer.updatePaddle(localPlayerId, if (localPlayerId == PlayerId.Player1) updatedPlayer1Paddle else updatedPlayer2Paddle)
@@ -124,6 +128,8 @@ class GameEngine(
         var player2Score = currentPlayer2Score
         var newFreezeTime = currentFreezeTime
         var paddleCollisionCount = 0
+        var player1PaddleHit = false
+        var player2PaddleHit = false
 
         if (ball.x - ball.radius <= player1Paddle.x + player1Paddle.width &&
             ball.x + ball.radius >= player1Paddle.x &&
@@ -131,6 +137,7 @@ class GameEngine(
             ball.y + ball.radius >= player1Paddle.y
         ) {
             paddleCollisionCount = 1
+            player1PaddleHit = true
             val paddleCenterY = PaddleUtils.calculatePaddleCenterY(player1Paddle)
             val relativeIntersectY = paddleCenterY - ball.y
             val normalizedIntersectY = PaddleUtils.calculateNormalizedIntersectY(relativeIntersectY, player1Paddle)
@@ -150,6 +157,7 @@ class GameEngine(
             ball.y + ball.radius >= player2Paddle.y
         ) {
             paddleCollisionCount = 1
+            player2PaddleHit = true
             val paddleCenterY = PaddleUtils.calculatePaddleCenterY(player2Paddle)
             val relativeIntersectY = paddleCenterY - ball.y
             val normalizedIntersectY = PaddleUtils.calculateNormalizedIntersectY(relativeIntersectY, player2Paddle)
@@ -185,6 +193,6 @@ class GameEngine(
             newFreezeTime = currentTimeMs + GameConstants.POINT_START_BALL_FREEZE_DURATION_MS
         }
 
-        return CollisionResult(updatedBall, player1Score, player2Score, newFreezeTime, paddleCollisionCount)
+        return CollisionResult(updatedBall, player1Score, player2Score, newFreezeTime, paddleCollisionCount, player1PaddleHit, player2PaddleHit)
     }
 }

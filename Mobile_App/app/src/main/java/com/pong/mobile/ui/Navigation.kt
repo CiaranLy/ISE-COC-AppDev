@@ -36,6 +36,7 @@ fun Navigation() {
     var aiClient by remember { mutableStateOf<AIClient?>(null) }
     var isFindingMatch by remember { mutableStateOf(false) }
     var showMatchmakingError by remember { mutableStateOf(false) }
+    var gameMode by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
 
     when (currentScreen) {
@@ -116,6 +117,7 @@ fun Navigation() {
                                     if (gameStarted) {
                                         withContext(Dispatchers.Main) {
                                             gameServer = client
+                                            gameMode = "singleplayer"
                                             currentScreen = Screen.Game
                                         }
                                     } else {
@@ -163,6 +165,7 @@ fun Navigation() {
                                 if (gameStarted) {
                                     withContext(Dispatchers.Main) {
                                         gameServer = client
+                                        gameMode = "multiplayer"
                                         currentScreen = Screen.Game
                                     }
                                 } else {
@@ -216,6 +219,7 @@ fun Navigation() {
 
                 GameScreen.Content(
                     gameServer = server,
+                    gameMode = gameMode,
                     onBackToMenu = {
                         Log.i(TAG, "Returning to main menu")
                         aiClient?.stop()

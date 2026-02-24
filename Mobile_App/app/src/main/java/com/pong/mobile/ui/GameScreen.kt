@@ -28,6 +28,8 @@ import com.pong.mobile.game.Paddle
 import com.pong.mobile.game.PlayerId
 import com.pong.mobile.game.server.GameServer
 import com.pong.mobile.game.util.PaddleUtils
+import com.pong.mobile.game.server.network.NetworkGameClient
+import com.pong.mobile.telemetry.TelemetryService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -42,6 +44,8 @@ private data class ViewportInfo(
 
 object GameScreen {
     private const val TAG = "GameScreen"
+    private const val TELEMETRY_SNAPSHOT_INTERVAL_MS = 500L
+    private const val TELEMETRY_LATENCY_WAIT_MS = 50L
 
     private fun getPaddleForPlayer(playerId: PlayerId, gameState: GameState): Paddle {
         return if (playerId == PlayerId.Player1) {
@@ -66,6 +70,7 @@ object GameScreen {
     @Composable
     fun Content(
         gameServer: GameServer,
+        gameMode: String,
         onBackToMenu: () -> Unit
     ) {
         BackHandler {
@@ -82,6 +87,9 @@ object GameScreen {
         var viewportInfo by remember { mutableStateOf<ViewportInfo?>(null) }
         var showErrorDialog by remember { mutableStateOf(false) }
         var isGameRunning by remember { mutableStateOf(false) }
+
+        val telemetryService = remember { TelemetryService() }
+        var telemetryStarted by remember { mutableStateOf(false) }
 
         val localPlayerId = remember {
             try {
@@ -227,6 +235,51 @@ object GameScreen {
                         Log.e(TAG, Constants.ERROR_MESSAGE_UPDATING_PADDLE, e)
                     }
                     delay(config.gameLoopDelayMs)
+                }
+            }
+        }
+
+        LaunchedEffect(isGameRunning) {
+            if (isGameRunning && localPlayerId != null) {
+                if (!telemetryStarted) {
+                    telemetryService.startSession(gameMode)
+                    telemetryStarted = true
+                }
+
+                while (isGameRunning) {
+                    try {
+                        val currentState = gameState
+                        if (currentState != null) {
+                            val localPaddle = getPaddleForPlayer(localPlayerId, currentState)
+                            val localPaddleHits = when (localPlayerId) {
+                                PlayerId.Player1 -> currentState.player1PaddleHits
+                                PlayerId.Player2 -> currentState.player2PaddleHits
+                            }
+
+                            val latencyMs = if (gameServer is NetworkGameClient) {
+                                withContext(Dispatchers.IO) {
+                                    (gameServer as NetworkGameClient).measureLatency()
+                                }
+                                delay(TELEMETRY_LATENCY_WAIT_MS)
+                                (gameServer as NetworkGameClient).getLatencyMs()
+                            } else {
+                                0L
+                            }
+
+                            telemetryService.recordSnapshot(
+                                collisionCount = localPaddleHits,
+                                latencyMs = latencyMs,
+                                paddleY = localPaddle.y
+                            )
+
+                            if (currentState.isGameOver) {
+                                telemetryService.endSession(currentState, localPlayerId)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error recording telemetry snapshot", e)
+                    }
+                    delay(TELEMETRY_SNAPSHOT_INTERVAL_MS)
                 }
             }
         }

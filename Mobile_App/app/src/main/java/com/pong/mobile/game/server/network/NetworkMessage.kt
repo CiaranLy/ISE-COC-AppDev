@@ -35,4 +35,7 @@ sealed class NetworkMessage {
         override val messageType: String = "ERROR",
         val error: String
     ) : NetworkMessage()
+
+    data class Ping(override val messageType: String = "PING") : NetworkMessage()
+    data class Pong(override val messageType: String = "PONG") : NetworkMessage()
 }

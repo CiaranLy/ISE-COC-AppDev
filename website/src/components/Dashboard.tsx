@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback, useMemo, ChangeEvent } from 'react';
 import GraphCard from './GraphCard';
 import { fetchGraphs, checkHealth } from '../services/api';
 import { Graph, CollectorGroup } from '../types';
+import createLogger from '../services/logger';
+import { DEFAULT_REFRESH_INTERVAL_SECONDS, HEALTH_CHECK_INTERVAL_MS } from '../config';
+
+const logger = createLogger('Dashboard');
 
 /**
  * Dashboard Component
@@ -22,7 +26,7 @@ function Dashboard() {
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [isConnected, setIsConnected] = useState(true);
-    const [refreshInterval, setRefreshInterval] = useState(5); // seconds
+    const [refreshInterval, setRefreshInterval] = useState(DEFAULT_REFRESH_INTERVAL_SECONDS);
 
     // Fetch graphs from the API
     const loadGraphs = useCallback(async () => {
@@ -33,7 +37,7 @@ function Dashboard() {
             setIsConnected(true);
             setError(null);
         } catch (err) {
-            console.error('Failed to fetch graphs:', err);
+            logger.error('Failed to fetch graphs:', err);
             setError(err instanceof Error ? err.message : 'Unknown error');
             setIsConnected(false);
         } finally {
@@ -62,7 +66,7 @@ function Dashboard() {
         const healthCheck = setInterval(async () => {
             const healthy = await checkHealth();
             setIsConnected(healthy);
-        }, 10000);
+        }, HEALTH_CHECK_INTERVAL_MS);
         
         return () => clearInterval(healthCheck);
     }, []);

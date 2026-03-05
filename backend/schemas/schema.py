@@ -30,6 +30,15 @@ class DataIngestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ErrorResponse(BaseModel):
+    """Structured error response returned for all server-side failures."""
+    success: bool = False
+    error: str
+    detail: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class DataPoint(BaseModel):
     """Schema for individual data points."""
     id: int

@@ -20,7 +20,7 @@ CONFIG_FILE = Path(__file__).parent / "config.json"
 _POLL_INTERVAL_SECONDS = 2.0
 
 DEFAULTS = {
-    "api_base_url": "http://localhost:8000",
+    "api_base_url": "http://localhost:8000/api/v1",
     "collector_name": "default_collector",
     "collection_interval_seconds": 5.0,
     "batch_size": 10,

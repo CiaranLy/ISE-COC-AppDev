@@ -1,5 +1,6 @@
 package com.pong.mobile.ui
 
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -16,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,6 +69,7 @@ object GameScreen {
     fun Content(gameServer: GameServer, gameMode: String, onBackToMenu: () -> Unit) {
         BackHandler { onBackToMenu() }
 
+        val context = LocalContext.current
         val density = LocalDensity.current
         val config = Config.current
         val gameWidthLogical = config.gameWidth
@@ -86,6 +89,10 @@ object GameScreen {
             } catch (e: Exception) {
                 null
             }
+        }
+
+        val deviceId = remember {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
         }
 
         LaunchedEffect(Unit) {
@@ -242,11 +249,11 @@ object GameScreen {
 
         LaunchedEffect(isGameRunning) {
             if (isGameRunning && localPlayerId != null) {
-                var sessionStarted = false
-                if (!sessionStarted) {
-                    telemetryService.startSession(gameMode)
-                    sessionStarted = true
-                }
+                telemetryService.startSession(
+                    gameMode = gameMode,
+                    playerId = localPlayerId.name,
+                    deviceId = deviceId
+                )
 
                 while (isGameRunning) {
                     try {

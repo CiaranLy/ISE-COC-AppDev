@@ -12,6 +12,6 @@
     "dlq_file": "dead_letter_queue.json",
     "num_sender_workers": 4,
     "ws_host": "localhost",
-    "mobile_collector_ws_port": 6789,
-    "desktop_collector_ws_port": 6790
+    "desktop_collector_ws_port": 6790,
+    "third_party_server_url": "ws://localhost:8081"
 }

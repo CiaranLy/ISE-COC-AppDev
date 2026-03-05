@@ -30,6 +30,7 @@ MSG_TYPE_SESSION_START = "session_start"
 MSG_TYPE_SESSION_END = "session_end"
 
 FIELD_TYPE = "type"
+FIELD_TIMESTAMP = "timestamp"
 FIELD_LATENCY_MS = "latency_ms"
 FIELD_PADDLE_Y = "paddle_y"
 FIELD_COLLISION_COUNT = "collision_count"
@@ -59,17 +60,26 @@ class DesktopCollector(Collector):
             ws_port=port,
         )
 
+    def _parse_timestamp(self, data: dict) -> datetime:
+        raw = data.get(FIELD_TIMESTAMP)
+        if raw:
+            try:
+                return datetime.fromisoformat(raw)
+            except (ValueError, TypeError):
+                pass
+        return datetime.now(timezone.utc)
+
     def process_message(self, data: dict) -> List[DataPoint]:
         msg_type = data.get(FIELD_TYPE, MSG_TYPE_SNAPSHOT)
-        now = datetime.now(timezone.utc)
+        timestamp = self._parse_timestamp(data)
         data_points = []
 
         if msg_type == MSG_TYPE_SNAPSHOT:
-            data_points.extend(self._extract_snapshot_metrics(data, now))
+            data_points.extend(self._extract_snapshot_metrics(data, timestamp))
         elif msg_type == MSG_TYPE_SESSION_START:
-            data_points.append(self._create_data_point(SESSION_START_MARKER_VALUE, UNIT_SESSION_START, now))
+            data_points.append(self._create_data_point(SESSION_START_MARKER_VALUE, UNIT_SESSION_START, timestamp))
         elif msg_type == MSG_TYPE_SESSION_END:
-            data_points.extend(self._extract_session_end_metrics(data, now))
+            data_points.extend(self._extract_session_end_metrics(data, timestamp))
 
         return data_points
 

@@ -9,18 +9,13 @@ Usage:
 """
 
 import argparse
-import json
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import List
 
+from config_manager import config as app_config
 from data_point import DataPoint
 from collector import Collector
-
-CONFIG_FILE = Path(__file__).parent / "config.json"
-with open(CONFIG_FILE, "r") as f:
-    config = json.load(f)
 
 COLLECTOR_NAME = "desktop_pong"
 DEFAULT_WS_PORT = 6790
@@ -53,7 +48,7 @@ DEFAULT_DURATION_MS = 0
 class DesktopCollector(Collector):
 
     def __init__(self, ws_host: str = None, ws_port: int = None):
-        port = ws_port or config.get("desktop_collector_ws_port", DEFAULT_WS_PORT)
+        port = ws_port or app_config.get("desktop_collector_ws_port", DEFAULT_WS_PORT)
         super().__init__(
             collector_name=COLLECTOR_NAME,
             ws_host=ws_host,
@@ -66,7 +61,7 @@ class DesktopCollector(Collector):
             try:
                 return datetime.fromisoformat(raw)
             except (ValueError, TypeError):
-                pass
+                self.logger.warning("Unparseable timestamp: %s", raw)
         return datetime.now(timezone.utc)
 
     def process_message(self, data: dict) -> List[DataPoint]:
@@ -125,12 +120,12 @@ def main():
     parser.add_argument(
         "--port", "-p",
         type=int,
-        default=config.get("desktop_collector_ws_port", DEFAULT_WS_PORT),
+        default=app_config.get("desktop_collector_ws_port", DEFAULT_WS_PORT),
         help="WebSocket server port",
     )
     parser.add_argument(
         "--host",
-        default=config.get("ws_host", "localhost"),
+        default=app_config.get("ws_host", "localhost"),
         help="WebSocket server host",
     )
     args = parser.parse_args()

@@ -7,21 +7,19 @@ extracts telemetry data, and forwards it to the local Queue Manager.
 
 import asyncio
 import json
-import signal
+import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 import websockets
 
+from config_manager import config as app_config
 from data_point import DataPoint
+from log_config import get_logger
 from queue_client import QueueClient, QueueNotRunningError
 
-CONFIG_FILE = Path(__file__).parent / "config.json"
-with open(CONFIG_FILE, "r") as f:
-    config = json.load(f)
+logger = get_logger("third_party_pong")
 
 COLLECTOR_NAME = "third_party_pong"
-SERVER_URL = config.get("third_party_server_url", "ws://localhost:8081")
 
 MSG_TYPE_SNAPSHOT = "snapshot"
 MSG_TYPE_SESSION_START = "session_start"
@@ -62,13 +60,22 @@ class ThirdPartyCollector:
         self.queue = QueueClient()
         self.running = True
 
+    def __enter__(self):
+        self.queue.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.running = False
+        self.queue.close()
+        return False
+
     def _parse_timestamp(self, data: dict) -> datetime:
         raw = data.get(FIELD_TIMESTAMP)
         if raw:
             try:
                 return datetime.fromisoformat(raw)
             except (ValueError, TypeError):
-                pass
+                logger.warning("Unparseable timestamp: %s", raw)
         return datetime.now(timezone.utc)
 
     def process_message(self, raw_message: str):
@@ -86,7 +93,7 @@ class ThirdPartyCollector:
 
             return self._extract_snapshot_metrics(data, timestamp)
         except json.JSONDecodeError as e:
-            print(f"[{self.collector_name}] Invalid JSON: {e}")
+            logger.warning("Invalid JSON: %s", e)
             return []
 
     def _extract_snapshot_metrics(self, data: dict, timestamp: datetime):
@@ -129,41 +136,52 @@ class ThirdPartyCollector:
             timestamp=timestamp,
         )
 
-    async def run(self):
-        print(f"[{self.collector_name}] Starting Third-Party Collector...")
-        print(f"[{self.collector_name}] Connecting to server: {SERVER_URL}")
+    def _get_server_url(self) -> str:
+        host = app_config.get("game_server_host", "localhost")
+        port = app_config.get("game_server_port", 8081)
+        return f"ws://{host}:{port}"
 
-        try:
-            self.queue.connect()
-        except QueueNotRunningError as e:
-            print(f"[ERROR] {e}")
-            return
+    async def run(self):
+        logger.info("Starting %s collector...", self.collector_name)
 
         while self.running:
+            server_url = self._get_server_url()
+            logger.info("Connecting to server: %s", server_url)
             try:
-                async with websockets.connect(SERVER_URL) as websocket:
-                    print(f"[{self.collector_name}] Connected to server!")
+                async with websockets.connect(server_url) as websocket:
+                    logger.info("Connected to server")
                     async for message in websocket:
                         data_points = self.process_message(message)
                         for dp in data_points:
                             self.queue.send(dp.to_dict())
 
                         if data_points:
-                            print(f"[{self.collector_name}] Forwarded {len(data_points)} points")
+                            logger.debug("Forwarded %d points", len(data_points))
 
             except (websockets.ConnectionClosed, ConnectionRefusedError, OSError) as e:
-                print(f"[{self.collector_name}] Connection error: {e}. Retrying in 5s...")
-                await asyncio.sleep(5)
+                delay = app_config.get("reconnect_delay_seconds")
+                logger.warning("Connection error: %s. Retrying in %ss...", e, delay)
+                await asyncio.sleep(delay)
             except KeyboardInterrupt:
                 self.running = False
                 break
 
-        self.queue.close()
-        print(f"[{self.collector_name}] Stopped.")
+        logger.info("%s stopped", self.collector_name)
 
-if __name__ == "__main__":
+
+def main():
     collector = ThirdPartyCollector()
     try:
-        asyncio.run(collector.run())
+        with collector:
+            asyncio.run(collector.run())
+    except QueueNotRunningError as e:
+        logger.error("%s", e)
+        logger.error("Please start the Queue Manager first: python queue_manager.py")
+        return 1
     except KeyboardInterrupt:
         pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

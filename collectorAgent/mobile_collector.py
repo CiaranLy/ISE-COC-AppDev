@@ -9,8 +9,7 @@ Requirements:
     A 'serviceAccountKey.json' file in this directory.
 """
 
-import json
-import threading
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,13 +18,12 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 from data_point import DataPoint
+from log_config import get_logger
 from queue_client import QueueClient, QueueNotRunningError
 
-CONFIG_FILE = Path(__file__).parent / "config.json"
-SERVICE_ACCOUNT_FILE = Path(__file__).parent / "serviceAccountKey.json"
+logger = get_logger("mobile_pong")
 
-with open(CONFIG_FILE, "r") as f:
-    config = json.load(f)
+SERVICE_ACCOUNT_FILE = Path(__file__).parent / "serviceAccountKey.json"
 
 COLLECTOR_NAME = "mobile_pong"
 UNIT_LATENCY_MS = "latency_ms"
@@ -36,23 +34,33 @@ UNIT_SESSION_DURATION_MS = "session_duration_ms"
 UNIT_FINAL_SCORE_PLAYER1 = "final_score_player1"
 UNIT_FINAL_SCORE_PLAYER2 = "final_score_player2"
 
+
 class MobileFirebaseCollector:
     def __init__(self):
         self.collector_name = COLLECTOR_NAME
         self.queue = QueueClient()
         self.db = None
-        self._active_sessions = set()
         self._session_start_times = {}
 
-    def connect_firebase(self):
+    def __enter__(self):
+        self.queue.connect()
+        if not self._connect_firebase():
+            raise RuntimeError("Failed to connect to Firebase")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.queue.close()
+        return False
+
+    def _connect_firebase(self) -> bool:
         if not SERVICE_ACCOUNT_FILE.exists():
-            print(f"[ERROR] Firebase service account file missing: {SERVICE_ACCOUNT_FILE}")
+            logger.error("Firebase service account file missing: %s", SERVICE_ACCOUNT_FILE)
             return False
 
         cred = credentials.Certificate(str(SERVICE_ACCOUNT_FILE))
         firebase_admin.initialize_app(cred)
         self.db = firestore.client()
-        print(f"[{self.collector_name}] Connected to Firebase")
+        logger.info("Connected to Firebase")
         return True
 
     def _send_to_queue(self, content: float, unit: str, timestamp: datetime):
@@ -61,17 +69,18 @@ class MobileFirebaseCollector:
                 collector_name=self.collector_name,
                 content=float(content),
                 unit=unit,
-                timestamp=timestamp
+                timestamp=timestamp,
             )
             self.queue.send(dp.to_dict())
         except QueueNotRunningError as e:
-            print(f"[{self.collector_name}] Queue Error: {e}")
+            logger.error("Queue error: %s", e)
         except Exception as e:
-            print(f"[{self.collector_name}] Error sending data: {e}")
+            logger.error("Error sending data: %s", e)
 
     def _to_utc_datetime(self, firebase_timestamp) -> datetime:
-        dt = firebase_timestamp.replace(tzinfo=timezone.utc) if firebase_timestamp.tzinfo is None else firebase_timestamp
-        return dt
+        if firebase_timestamp.tzinfo is None:
+            return firebase_timestamp.replace(tzinfo=timezone.utc)
+        return firebase_timestamp
 
     def _make_snapshot_listener(self, session_id):
         def on_snapshot_received(doc_snapshot, changes, read_time):
@@ -98,10 +107,14 @@ class MobileFirebaseCollector:
             session_id = change.document.id
 
             if change.type.name == 'ADDED':
-                timestamp = self._to_utc_datetime(data["startedAt"]) if "startedAt" in data else datetime.now(timezone.utc)
+                timestamp = (
+                    self._to_utc_datetime(data["startedAt"])
+                    if "startedAt" in data
+                    else datetime.now(timezone.utc)
+                )
                 self._session_start_times[session_id] = timestamp
 
-                print(f"[{self.collector_name}] New Session: {session_id}")
+                logger.info("New Session: %s", session_id)
                 self._send_to_queue(1.0, UNIT_SESSION_START, timestamp)
 
                 self.db.collection("game_sessions").document(session_id)\
@@ -109,7 +122,7 @@ class MobileFirebaseCollector:
 
             elif change.type.name == 'MODIFIED' and "endedAt" in data:
                 timestamp = self._to_utc_datetime(data["endedAt"])
-                print(f"[{self.collector_name}] Session Ended: {session_id}")
+                logger.info("Session Ended: %s", session_id)
                 if "durationMs" in data:
                     self._send_to_queue(data["durationMs"], UNIT_SESSION_DURATION_MS, timestamp)
                 if "finalScorePlayer1" in data:
@@ -119,28 +132,30 @@ class MobileFirebaseCollector:
                 self._session_start_times.pop(session_id, None)
 
     def run(self):
-        print(f"Starting {self.collector_name} (Firebase Mode)...")
-        try:
-            self.queue.connect()
-        except QueueNotRunningError as e:
-            print(f"[ERROR] {e}")
-            return
+        logger.info("Starting %s (Firebase Mode)...", self.collector_name)
 
-        if not self.connect_firebase():
-            return
-
-        # Listen for new game sessions
         self.db.collection("game_sessions").on_snapshot(self.on_session_received)
 
-        print(f"[{self.collector_name}] Listening for Firebase updates. Press Ctrl+C to stop.")
+        logger.info("Listening for Firebase updates. Press Ctrl+C to stop.")
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print(f"[{self.collector_name}] Stopping...")
-        finally:
-            self.queue.close()
+            logger.info("Stopping...")
+
+
+def main():
+    collector = MobileFirebaseCollector()
+    try:
+        with collector:
+            collector.run()
+    except (QueueNotRunningError, RuntimeError) as e:
+        logger.error("%s", e)
+        return 1
+    except KeyboardInterrupt:
+        pass
+    return 0
+
 
 if __name__ == "__main__":
-    collector = MobileFirebaseCollector()
-    collector.run()
+    sys.exit(main())

@@ -8,19 +8,15 @@ import abc
 import asyncio
 import json
 import signal
-from pathlib import Path
 from typing import List, Optional
 
 import websockets
 
+from config_manager import config as app_config
 from data_point import DataPoint
+from log_config import get_logger
 from queue_client import QueueClient, QueueNotRunningError
 
-CONFIG_FILE = Path(__file__).parent / "config.json"
-with open(CONFIG_FILE, "r") as f:
-    _config = json.load(f)
-
-DEFAULT_WS_HOST = "localhost"
 STARTUP_BANNER_WIDTH = 60
 
 
@@ -33,7 +29,8 @@ class Collector(abc.ABC):
         ws_port: int = None,
     ):
         self.collector_name = collector_name
-        self.ws_host = ws_host or _config.get("ws_host", DEFAULT_WS_HOST)
+        self.logger = get_logger(collector_name)
+        self.ws_host = ws_host or app_config.get("ws_host", "localhost")
         self.ws_port = ws_port
         self.queue: Optional[QueueClient] = None
         self.running = False
@@ -58,7 +55,7 @@ class Collector(abc.ABC):
 
     async def _handle_connection(self, websocket):
         remote = websocket.remote_address
-        print(f"[{self.collector_name}] App connected from {remote}")
+        self.logger.info("App connected from %s", remote)
         self._connected_clients.add(websocket)
 
         try:
@@ -71,27 +68,23 @@ class Collector(abc.ABC):
                         self.queue.send(dp.to_dict())
 
                     if data_points:
-                        print(
-                            f"[{self.collector_name}] Sent {len(data_points)} data points"
-                        )
+                        self.logger.debug("Sent %d data points", len(data_points))
 
                 except json.JSONDecodeError as e:
-                    print(f"[{self.collector_name}] Invalid JSON: {e}")
+                    self.logger.warning("Invalid JSON: %s", e)
                 except QueueNotRunningError as e:
-                    print(f"[{self.collector_name}] Queue error: {e}")
+                    self.logger.error("Queue error: %s", e)
                     if not self._try_reconnect_queue():
-                        print(
-                            f"[{self.collector_name}] Could not reconnect to queue. Stopping."
-                        )
+                        self.logger.error("Could not reconnect to queue. Stopping.")
                         return
                 except Exception as e:
-                    print(f"[{self.collector_name}] Error processing message: {e}")
+                    self.logger.error("Error processing message: %s", e)
 
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
             self._connected_clients.discard(websocket)
-            print(f"[{self.collector_name}] App disconnected from {remote}")
+            self.logger.info("App disconnected from %s", remote)
 
     def _try_reconnect_queue(self) -> bool:
         try:
@@ -99,7 +92,7 @@ class Collector(abc.ABC):
                 self.queue.close()
             self.queue = QueueClient()
             self.queue.connect()
-            print(f"[{self.collector_name}] Reconnected to queue")
+            self.logger.info("Reconnected to queue")
             return True
         except QueueNotRunningError:
             return False
@@ -111,23 +104,22 @@ class Collector(abc.ABC):
             with self as collector:
                 asyncio.run(collector._serve())
         except QueueNotRunningError as e:
-            print(f"\n[ERROR] {e}")
-            print("\nPlease start the Queue Manager first:")
-            print("    python queue_manager.py")
+            self.logger.error("%s", e)
+            self.logger.error("Please start the Queue Manager first: python queue_manager.py")
             return 1
         except KeyboardInterrupt:
-            print(f"\n[{self.collector_name}] Interrupted by user")
+            self.logger.info("Interrupted by user")
 
-        print(f"[{self.collector_name}] Collector stopped")
+        self.logger.info("Collector stopped")
         return 0
 
     def _print_startup_banner(self):
-        print("=" * STARTUP_BANNER_WIDTH)
-        print(f"{self.collector_name} Collector Starting")
-        print("=" * STARTUP_BANNER_WIDTH)
-        print(f"Collector Name: {self.collector_name}")
-        print(f"WebSocket:      {self.ws_host}:{self.ws_port}")
-        print("=" * STARTUP_BANNER_WIDTH)
+        self.logger.info("=" * STARTUP_BANNER_WIDTH)
+        self.logger.info("%s Collector Starting", self.collector_name)
+        self.logger.info("=" * STARTUP_BANNER_WIDTH)
+        self.logger.info("Collector Name: %s", self.collector_name)
+        self.logger.info("WebSocket:      %s:%s", self.ws_host, self.ws_port)
+        self.logger.info("=" * STARTUP_BANNER_WIDTH)
 
     async def _serve(self):
         loop = asyncio.get_event_loop()
@@ -141,17 +133,16 @@ class Collector(abc.ABC):
             try:
                 loop.add_signal_handler(sig, _signal_handler)
             except NotImplementedError:
-                # Windows does not support add_signal_handler
                 pass
 
         async with websockets.serve(
             self._handle_connection, self.ws_host, self.ws_port
         ):
-            print(
-                f"[{self.collector_name}] WebSocket server listening on "
-                f"ws://{self.ws_host}:{self.ws_port}"
+            self.logger.info(
+                "WebSocket server listening on ws://%s:%s",
+                self.ws_host, self.ws_port,
             )
-            print(f"[{self.collector_name}] Waiting for app connections...")
+            self.logger.info("Waiting for app connections...")
 
             try:
                 await stop

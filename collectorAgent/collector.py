@@ -1,121 +1,159 @@
 """
-Collector - Collects system metrics and sends to the Queue Manager.
+Collector - Abstract base class for WebSocket-based telemetry collectors.
 
-The Queue Manager must be running first, otherwise this will error.
-
-Usage:
-    python collector.py                          # Uses config.json collector_name
-    python collector.py --name my_custom_name    # Override collector name
+Subclasses implement process_message() to convert app-specific JSON into DataPoints.
 """
 
-import argparse
+import abc
+import asyncio
 import json
 import signal
-import sys
-import time
 from pathlib import Path
+from typing import List, Optional
 
-import psutil
+import websockets
 
-from collector_lib import collect_all_metrics
+from data_point import DataPoint
 from queue_client import QueueClient, QueueNotRunningError
 
-# Load config
 CONFIG_FILE = Path(__file__).parent / "config.json"
 with open(CONFIG_FILE, "r") as f:
-    config = json.load(f)
+    _config = json.load(f)
+
+DEFAULT_WS_HOST = "localhost"
+STARTUP_BANNER_WIDTH = 60
 
 
-def main():
-    parser = argparse.ArgumentParser(description="System metrics collector")
-    parser.add_argument(
-        "--name", "-n",
-        default=config["collector_name"],
-        help=f"Collector name (default: {config['collector_name']})"
-    )
-    parser.add_argument(
-        "--interval", "-i",
-        type=float,
-        default=config["collection_interval_seconds"],
-        help=f"Collection interval in seconds (default: {config['collection_interval_seconds']})"
-    )
-    args = parser.parse_args()
-    
-    collector_name = args.name
-    collection_interval = args.interval
-    
-    print("=" * 50)
-    print("Collector Starting")
-    print("=" * 50)
-    print(f"Collector Name: {collector_name}")
-    print(f"Collection Interval: {collection_interval}s")
-    print("=" * 50)
-    
-    # Initialize CPU percent (first call always returns 0)
-    psutil.cpu_percent(interval=None)
-    
-    # Try to connect to queue
-    try:
-        queue = QueueClient()
-        queue.connect()
-    except QueueNotRunningError as e:
-        print(f"\n[ERROR] {e}")
-        print("\nPlease start the Queue Manager first:")
-        print("    python queue_manager.py")
-        return 1
-    
-    # Handle graceful shutdown
-    running = True
-    
-    def shutdown_handler(signum, frame):
-        nonlocal running
-        print("\n[Collector] Shutdown signal received...")
-        running = False
-    
-    signal.signal(signal.SIGINT, shutdown_handler)
-    signal.signal(signal.SIGTERM, shutdown_handler)
-    
-    # Main collection loop
-    print("[Collector] Starting collection loop...")
-    
-    try:
-        while running:
-            try:
-                # Collect all metrics
-                data_points = collect_all_metrics(collector_name)
-                
-                # Send each data point to the queue
-                for dp in data_points:
-                    queue.send(dp.to_dict())
-                
-                print(f"[Collector] Sent {len(data_points)} data points")
-                
-            except QueueNotRunningError as e:
-                print(f"[Collector] Lost connection to queue: {e}")
-                print("[Collector] Attempting to reconnect...")
-                
-                # Try to reconnect
+class Collector(abc.ABC):
+
+    def __init__(
+        self,
+        collector_name: str,
+        ws_host: str = None,
+        ws_port: int = None,
+    ):
+        self.collector_name = collector_name
+        self.ws_host = ws_host or _config.get("ws_host", DEFAULT_WS_HOST)
+        self.ws_port = ws_port
+        self.queue: Optional[QueueClient] = None
+        self.running = False
+        self._connected_clients = set()
+
+    def __enter__(self):
+        self.queue = QueueClient()
+        self.queue.connect()
+        self.running = True
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.running = False
+        if self.queue:
+            self.queue.close()
+            self.queue = None
+        return False
+
+    @abc.abstractmethod
+    def process_message(self, data: dict) -> List[DataPoint]:
+        ...
+
+    async def _handle_connection(self, websocket):
+        remote = websocket.remote_address
+        print(f"[{self.collector_name}] App connected from {remote}")
+        self._connected_clients.add(websocket)
+
+        try:
+            async for raw_message in websocket:
                 try:
-                    queue.close()
-                    queue = QueueClient()
-                    queue.connect()
-                    print("[Collector] Reconnected!")
-                except QueueNotRunningError:
-                    print("[Collector] Reconnect failed. Queue Manager may have stopped.")
-                    running = False
-                    break
-            
-            # Wait for next collection interval
-            time.sleep(collection_interval)
-            
-    except KeyboardInterrupt:
-        print("\n[Collector] Interrupted by user")
-    finally:
-        queue.close()
-    
-    print("[Collector] Collector stopped")
-    return 0
+                    data = json.loads(raw_message)
+                    data_points = self.process_message(data)
 
+                    for dp in data_points:
+                        self.queue.send(dp.to_dict())
 
-if __name__ == "__main__":
-    sys.exit(main())
+                    if data_points:
+                        print(
+                            f"[{self.collector_name}] Sent {len(data_points)} data points"
+                        )
+
+                except json.JSONDecodeError as e:
+                    print(f"[{self.collector_name}] Invalid JSON: {e}")
+                except QueueNotRunningError as e:
+                    print(f"[{self.collector_name}] Queue error: {e}")
+                    if not self._try_reconnect_queue():
+                        print(
+                            f"[{self.collector_name}] Could not reconnect to queue. Stopping."
+                        )
+                        return
+                except Exception as e:
+                    print(f"[{self.collector_name}] Error processing message: {e}")
+
+        except websockets.exceptions.ConnectionClosed:
+            pass
+        finally:
+            self._connected_clients.discard(websocket)
+            print(f"[{self.collector_name}] App disconnected from {remote}")
+
+    def _try_reconnect_queue(self) -> bool:
+        try:
+            if self.queue:
+                self.queue.close()
+            self.queue = QueueClient()
+            self.queue.connect()
+            print(f"[{self.collector_name}] Reconnected to queue")
+            return True
+        except QueueNotRunningError:
+            return False
+
+    def run(self):
+        self._print_startup_banner()
+
+        try:
+            with self as collector:
+                asyncio.run(collector._serve())
+        except QueueNotRunningError as e:
+            print(f"\n[ERROR] {e}")
+            print("\nPlease start the Queue Manager first:")
+            print("    python queue_manager.py")
+            return 1
+        except KeyboardInterrupt:
+            print(f"\n[{self.collector_name}] Interrupted by user")
+
+        print(f"[{self.collector_name}] Collector stopped")
+        return 0
+
+    def _print_startup_banner(self):
+        print("=" * STARTUP_BANNER_WIDTH)
+        print(f"{self.collector_name} Collector Starting")
+        print("=" * STARTUP_BANNER_WIDTH)
+        print(f"Collector Name: {self.collector_name}")
+        print(f"WebSocket:      {self.ws_host}:{self.ws_port}")
+        print("=" * STARTUP_BANNER_WIDTH)
+
+    async def _serve(self):
+        loop = asyncio.get_event_loop()
+        stop = loop.create_future()
+
+        def _signal_handler():
+            if not stop.done():
+                stop.set_result(None)
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, _signal_handler)
+            except NotImplementedError:
+                # Windows does not support add_signal_handler
+                pass
+
+        async with websockets.serve(
+            self._handle_connection, self.ws_host, self.ws_port
+        ):
+            print(
+                f"[{self.collector_name}] WebSocket server listening on "
+                f"ws://{self.ws_host}:{self.ws_port}"
+            )
+            print(f"[{self.collector_name}] Waiting for app connections...")
+
+            try:
+                await stop
+            except asyncio.CancelledError:
+                pass

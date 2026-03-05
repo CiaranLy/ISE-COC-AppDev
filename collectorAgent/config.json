@@ -10,5 +10,8 @@
     "queue_port": 5555,
     "ack_timeout_seconds": 90,
     "dlq_file": "dead_letter_queue.json",
-    "num_sender_workers": 4
+    "num_sender_workers": 4,
+    "ws_host": "localhost",
+    "mobile_collector_ws_port": 6789,
+    "desktop_collector_ws_port": 6790
 }

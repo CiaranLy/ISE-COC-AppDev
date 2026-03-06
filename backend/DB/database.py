@@ -12,7 +12,7 @@ from log_config import get_logger
 logger = get_logger("database")
 
 async_engine: AsyncEngine = create_async_engine(
-    DATABASE_URL, echo=DB_ECHO, poolclass=NullPool, connect_args={"check_same_thread": False}
+    DATABASE_URL, echo=DB_ECHO, poolclass=NullPool
 )
 
 AsyncSessionLocal = async_sessionmaker(

@@ -17,7 +17,9 @@ object MainMenu {
     fun Content(
         onSingleplayerClick: () -> Unit,
         onFindMatchClick: () -> Unit,
-        onSettingsClick: () -> Unit
+        onSettingsClick: () -> Unit,
+        onMatchHistoryClick: () -> Unit,
+        isFindingMatch: Boolean = false
     ) {
         val singleplayerButton = ButtonFactory.createStandardButton(
             text = Constants.UI_BUTTON_SINGLEPLAYER,
@@ -32,6 +34,11 @@ object MainMenu {
         val settingsButton = ButtonFactory.createStandardButton(
             text = Constants.UI_BUTTON_SETTINGS,
             onClick = onSettingsClick
+        )
+
+        val matchHistoryButton = ButtonFactory.createStandardButton(
+            text = Constants.UI_BUTTON_MATCH_HISTORY,
+            onClick = onMatchHistoryClick
         )
 
         Box(modifier = Modifier.fillMaxSize()) {
@@ -52,6 +59,10 @@ object MainMenu {
                 ButtonComposable(buttonSpec = singleplayerButton)
                 ButtonComposable(buttonSpec = findMatchButton)
                 ButtonComposable(buttonSpec = settingsButton)
+                ButtonComposable(buttonSpec = matchHistoryButton)
+                if (isFindingMatch) {
+                    Text(text = Constants.UI_MATCHMAKING_WAITING)
+                }
             }
         }
     }

@@ -1,7 +1,9 @@
 """
 Desktop Collector - Receives game telemetry from the Pong desktop client via WebSocket.
 
-The desktop client connects on localhost.
+This collector acts as a WebSocket CLIENT that connects to the telemetry server
+embedded in the Pong game client, extracts telemetry data, and forwards it to
+the local Queue Manager.
 
 Usage:
     python desktop_collector.py
@@ -9,13 +11,19 @@ Usage:
 """
 
 import argparse
+import asyncio
+import json
 import sys
 from datetime import datetime, timezone
-from typing import List
+
+import websockets
 
 from config_manager import config as app_config
 from data_point import DataPoint
-from collector import Collector
+from log_config import get_logger
+from queue_client import QueueClient, QueueNotRunningError
+
+logger = get_logger("desktop_pong")
 
 COLLECTOR_NAME = "desktop_pong"
 DEFAULT_WS_PORT = 6790
@@ -26,6 +34,7 @@ MSG_TYPE_SESSION_END = "session_end"
 
 FIELD_TYPE = "type"
 FIELD_TIMESTAMP = "timestamp"
+FIELD_SESSION_ID = "session_id"
 FIELD_LATENCY_MS = "latency_ms"
 FIELD_PADDLE_Y = "paddle_y"
 FIELD_COLLISION_COUNT = "collision_count"
@@ -45,15 +54,26 @@ SESSION_START_MARKER_VALUE = 1.0
 DEFAULT_DURATION_MS = 0
 
 
-class DesktopCollector(Collector):
+class DesktopCollector:
 
     def __init__(self, ws_host: str = None, ws_port: int = None):
-        port = ws_port or app_config.get("desktop_collector_ws_port", DEFAULT_WS_PORT)
-        super().__init__(
-            collector_name=COLLECTOR_NAME,
-            ws_host=ws_host,
-            ws_port=port,
-        )
+        self.collector_name = COLLECTOR_NAME
+        self.ws_host = ws_host or app_config.get("ws_host", "localhost")
+        self.ws_port = ws_port or app_config.get("desktop_collector_ws_port", DEFAULT_WS_PORT)
+        self.queue = QueueClient()
+        self.running = True
+
+    def __enter__(self):
+        self.queue.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.running = False
+        self.queue.close()
+        return False
+
+    def _get_server_url(self) -> str:
+        return f"ws://{self.ws_host}:{self.ws_port}"
 
     def _parse_timestamp(self, data: dict) -> datetime:
         raw = data.get(FIELD_TIMESTAMP)
@@ -61,24 +81,32 @@ class DesktopCollector(Collector):
             try:
                 return datetime.fromisoformat(raw)
             except (ValueError, TypeError):
-                self.logger.warning("Unparseable timestamp: %s", raw)
+                logger.warning("Unparseable timestamp: %s", raw)
         return datetime.now(timezone.utc)
 
-    def process_message(self, data: dict) -> List[DataPoint]:
-        msg_type = data.get(FIELD_TYPE, MSG_TYPE_SNAPSHOT)
-        timestamp = self._parse_timestamp(data)
-        data_points = []
+    def process_message(self, raw_message: str):
+        try:
+            data = json.loads(raw_message)
+            msg_type = data.get(FIELD_TYPE, MSG_TYPE_SNAPSHOT)
+            timestamp = self._parse_timestamp(data)
+            session_id = data.get(FIELD_SESSION_ID)
 
-        if msg_type == MSG_TYPE_SNAPSHOT:
-            data_points.extend(self._extract_snapshot_metrics(data, timestamp))
-        elif msg_type == MSG_TYPE_SESSION_START:
-            data_points.append(self._create_data_point(SESSION_START_MARKER_VALUE, UNIT_SESSION_START, timestamp))
-        elif msg_type == MSG_TYPE_SESSION_END:
-            data_points.extend(self._extract_session_end_metrics(data, timestamp))
+            if not session_id:
+                logger.error("Missing session_id in %s message, dropping", msg_type)
+                return []
 
-        return data_points
+            if msg_type == MSG_TYPE_SESSION_START:
+                return [self._create_dp(SESSION_START_MARKER_VALUE, UNIT_SESSION_START, timestamp, session_id)]
 
-    def _extract_snapshot_metrics(self, data: dict, timestamp: datetime) -> List[DataPoint]:
+            if msg_type == MSG_TYPE_SESSION_END:
+                return self._extract_session_end_metrics(data, timestamp, session_id)
+
+            return self._extract_snapshot_metrics(data, timestamp, session_id)
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid JSON: %s", e)
+            return []
+
+    def _extract_snapshot_metrics(self, data: dict, timestamp: datetime, session_id: str):
         metrics = []
         snapshot_fields = [
             (FIELD_LATENCY_MS, UNIT_LATENCY_MS),
@@ -87,15 +115,16 @@ class DesktopCollector(Collector):
         ]
         for field, unit in snapshot_fields:
             if field in data:
-                metrics.append(self._create_data_point(float(data[field]), unit, timestamp))
+                metrics.append(self._create_dp(float(data[field]), unit, timestamp, session_id))
         return metrics
 
-    def _extract_session_end_metrics(self, data: dict, timestamp: datetime) -> List[DataPoint]:
+    def _extract_session_end_metrics(self, data: dict, timestamp: datetime, session_id: str):
         metrics = [
-            self._create_data_point(
+            self._create_dp(
                 float(data.get(FIELD_DURATION_MS, DEFAULT_DURATION_MS)),
                 UNIT_SESSION_DURATION_MS,
                 timestamp,
+                session_id,
             )
         ]
         for field, unit in [
@@ -103,16 +132,44 @@ class DesktopCollector(Collector):
             (FIELD_FINAL_SCORE_PLAYER2, UNIT_FINAL_SCORE_PLAYER2),
         ]:
             if field in data:
-                metrics.append(self._create_data_point(float(data[field]), unit, timestamp))
+                metrics.append(self._create_dp(float(data[field]), unit, timestamp, session_id))
         return metrics
 
-    def _create_data_point(self, content: float, unit: str, timestamp: datetime) -> DataPoint:
+    def _create_dp(self, content: float, unit: str, timestamp: datetime, session_id: str) -> DataPoint:
         return DataPoint(
             collector_name=self.collector_name,
             content=content,
             unit=unit,
             timestamp=timestamp,
+            session_id=session_id,
         )
+
+    async def run(self):
+        logger.info("Starting %s collector...", self.collector_name)
+
+        while self.running:
+            server_url = self._get_server_url()
+            logger.info("Connecting to game client telemetry: %s", server_url)
+            try:
+                async with websockets.connect(server_url) as websocket:
+                    logger.info("Connected to game client")
+                    async for message in websocket:
+                        data_points = self.process_message(message)
+                        for dp in data_points:
+                            self.queue.send(dp.to_dict())
+
+                        if data_points:
+                            logger.debug("Forwarded %d points", len(data_points))
+
+            except (websockets.ConnectionClosed, OSError) as e:
+                delay = app_config.get("reconnect_delay_seconds", 5.0)
+                logger.warning("Connection error: %s. Retrying in %ss...", e, delay)
+                await asyncio.sleep(delay)
+            except KeyboardInterrupt:
+                self.running = False
+                break
+
+        logger.info("%s stopped", self.collector_name)
 
 
 def main():
@@ -121,17 +178,26 @@ def main():
         "--port", "-p",
         type=int,
         default=app_config.get("desktop_collector_ws_port", DEFAULT_WS_PORT),
-        help="WebSocket server port",
+        help="Game client telemetry port to connect to",
     )
     parser.add_argument(
         "--host",
         default=app_config.get("ws_host", "localhost"),
-        help="WebSocket server host",
+        help="Game client telemetry host to connect to",
     )
     args = parser.parse_args()
 
     collector = DesktopCollector(ws_host=args.host, ws_port=args.port)
-    return collector.run()
+    try:
+        with collector:
+            asyncio.run(collector.run())
+    except QueueNotRunningError as e:
+        logger.error("%s", e)
+        logger.error("Please start the Queue Manager first: python queue_manager.py")
+        return 1
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
 if __name__ == "__main__":

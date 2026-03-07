@@ -12,7 +12,8 @@ class DataIngest(BaseModel):
     content: float
     unit: str
     timestamp: datetime
-    message_id: Optional[str] = None  # For tracking acknowledgments
+    session_id: str
+    message_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,6 +46,7 @@ class DataPoint(BaseModel):
     content: float
     timestamp_utc: datetime
     collector_id: int
+    session_id: str
 
     model_config = ConfigDict(from_attributes=True)
 

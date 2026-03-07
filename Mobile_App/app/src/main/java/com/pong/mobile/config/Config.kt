@@ -21,7 +21,8 @@ data class Config(
         val maxPlayerClientStartRetries: Int = 30,
         val playerClientStartRetryDelayMs: Long = 200L,
         val matchmakingGameServerPortRangeStart: Int =
-                Constants.MATCHMAKING_GAME_SERVER_PORT_RANGE_START
+                Constants.MATCHMAKING_GAME_SERVER_PORT_RANGE_START,
+        val telemetryPort: Int = 6790
 ) {
     companion object {
         private const val PREFS_NAME = "pong_settings"

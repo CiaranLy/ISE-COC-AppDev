@@ -27,6 +27,7 @@ MSG_TYPE_SESSION_END = "session_end"
 
 FIELD_TYPE = "type"
 FIELD_TIMESTAMP = "timestamp"
+FIELD_SESSION_ID = "session_id"
 FIELD_PADDLE_Y_PLAYER1 = "paddle_y_player1"
 FIELD_PADDLE_Y_PLAYER2 = "paddle_y_player2"
 FIELD_LATENCY_MS_PLAYER1 = "latency_ms_player1"
@@ -82,21 +83,24 @@ class ThirdPartyCollector:
         try:
             data = json.loads(raw_message)
             timestamp = self._parse_timestamp(data)
+            session_id = data.get(FIELD_SESSION_ID)
             msg_type = data.get(FIELD_TYPE, MSG_TYPE_SNAPSHOT)
 
-            if msg_type == MSG_TYPE_SNAPSHOT:
-                return self._extract_snapshot_metrics(data, timestamp)
-            elif msg_type == MSG_TYPE_SESSION_START:
-                return [self._create_dp(SESSION_START_MARKER_VALUE, UNIT_SESSION_START, timestamp)]
-            elif msg_type == MSG_TYPE_SESSION_END:
-                return self._extract_session_end_metrics(data, timestamp)
+            if not session_id:
+                logger.error("Missing session_id in %s message, dropping", msg_type)
+                return []
 
-            return self._extract_snapshot_metrics(data, timestamp)
+            if msg_type == MSG_TYPE_SESSION_START:
+                return [self._create_dp(SESSION_START_MARKER_VALUE, UNIT_SESSION_START, timestamp, session_id)]
+            elif msg_type == MSG_TYPE_SESSION_END:
+                return self._extract_session_end_metrics(data, timestamp, session_id)
+
+            return self._extract_snapshot_metrics(data, timestamp, session_id)
         except json.JSONDecodeError as e:
             logger.warning("Invalid JSON: %s", e)
             return []
 
-    def _extract_snapshot_metrics(self, data: dict, timestamp: datetime):
+    def _extract_snapshot_metrics(self, data: dict, timestamp: datetime, session_id: str):
         metrics = []
         snapshot_fields = [
             (FIELD_PADDLE_Y_PLAYER1, UNIT_PADDLE_Y_PLAYER1),
@@ -109,15 +113,16 @@ class ThirdPartyCollector:
         ]
         for field, unit in snapshot_fields:
             if field in data:
-                metrics.append(self._create_dp(float(data[field]), unit, timestamp))
+                metrics.append(self._create_dp(float(data[field]), unit, timestamp, session_id))
         return metrics
 
-    def _extract_session_end_metrics(self, data: dict, timestamp: datetime):
+    def _extract_session_end_metrics(self, data: dict, timestamp: datetime, session_id: str):
         metrics = [
             self._create_dp(
                 float(data.get(FIELD_DURATION_MS, DEFAULT_DURATION_MS)),
                 UNIT_SESSION_DURATION_MS,
                 timestamp,
+                session_id,
             )
         ]
         for field, unit in [
@@ -125,15 +130,16 @@ class ThirdPartyCollector:
             (FIELD_FINAL_SCORE_PLAYER2, UNIT_FINAL_SCORE_PLAYER2),
         ]:
             if field in data:
-                metrics.append(self._create_dp(float(data[field]), unit, timestamp))
+                metrics.append(self._create_dp(float(data[field]), unit, timestamp, session_id))
         return metrics
 
-    def _create_dp(self, content: float, unit: str, timestamp: datetime) -> DataPoint:
+    def _create_dp(self, content: float, unit: str, timestamp: datetime, session_id: str) -> DataPoint:
         return DataPoint(
             collector_name=self.collector_name,
             content=float(content),
             unit=unit,
             timestamp=timestamp,
+            session_id=session_id,
         )
 
     def _get_server_url(self) -> str:

@@ -13,28 +13,60 @@ import com.pong.mobile.game.server.GameServer
 import com.pong.mobile.game.util.PaddleUtils
 import com.pong.mobile.util.TimeUtils
 import kotlinx.coroutines.*
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.PrintWriter
+import org.java_websocket.WebSocket
+import org.java_websocket.handshake.ClientHandshake
+import org.java_websocket.server.WebSocketServer
 import java.net.BindException
-import java.net.ServerSocket
-import java.net.Socket
+import java.net.InetSocketAddress
 import java.util.UUID
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.BlockingQueue
 import java.util.concurrent.ConcurrentHashMap
+
+private const val SESSION_CLOSED_SENTINEL = "__CLOSED__"
 
 class NetworkGameServer(
     private val port: Int = Config.current.gameServerPort,
     private val gameWidth: Float,
     private val gameHeight: Float
 ) {
-    private var serverSocket: ServerSocket? = null
+    private val matchId: String = UUID.randomUUID().toString()
+    private var webSocketServer: GameWebSocketServer? = null
     private val clients = ConcurrentHashMap<PlayerId, ClientConnection>()
+    private val messageQueues = ConcurrentHashMap<WebSocket, BlockingQueue<String>>()
     private var gameEngine: GameEngine? = null
     @Volatile
     private var gameState: GameState? = null
     private var isRunning = false
     private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val gameStateLock = Any()
+
+    private inner class GameWebSocketServer(addr: InetSocketAddress) : WebSocketServer(addr) {
+        override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
+            val queue = ArrayBlockingQueue<String>(256)
+            messageQueues[conn] = queue
+            val sessionStart = SessionStartPayload.toJson(SessionStartPayload.create(sessionId = matchId))
+            conn.send(sessionStart)
+            Log.d(TAG, "Sent session_start to ${conn.remoteSocketAddress}")
+            serverScope.launch {
+                handleClientConnection(conn, queue)
+            }
+        }
+
+        override fun onMessage(conn: WebSocket, message: String) {
+            messageQueues[conn]?.put(message)
+        }
+
+        override fun onClose(conn: WebSocket, code: Int, reason: String, remote: Boolean) {
+            messageQueues.remove(conn)?.put(SESSION_CLOSED_SENTINEL)
+        }
+
+        override fun onError(conn: WebSocket?, ex: Exception) {
+            Log.e(TAG, "WebSocket error for ${conn?.remoteSocketAddress}", ex)
+        }
+
+        override fun onStart() {}
+    }
 
     fun start() {
         if (isRunning) {
@@ -43,34 +75,18 @@ class NetworkGameServer(
         }
 
         try {
-            serverSocket = ServerSocket(port)
+            webSocketServer = GameWebSocketServer(InetSocketAddress(port))
+            webSocketServer?.start()
             isRunning = true
-            Log.i(TAG, "Network game server started on port $port")
-
-            serverScope.launch {
-                while (isRunning) {
-                    try {
-                        val socket = serverSocket?.accept()
-                        if (socket != null) {
-                            handleClientConnection(socket)
-                        }
-                    } catch (e: Exception) {
-                        if (isRunning) {
-                            Log.e(TAG, "Error accepting client connection", e)
-                        }
-                    }
-                }
-            }
+            Log.i(TAG, "Network game server (WebSocket) started on port $port")
         } catch (e: BindException) {
             Log.e(TAG, Constants.ERROR_MESSAGE_PORT_IN_USE.format(port), e)
             isRunning = false
-            serverSocket?.close()
-            serverSocket = null
+            webSocketServer = null
         } catch (e: Exception) {
             Log.e(TAG, Constants.ERROR_MESSAGE_FAILED_START_SERVER.format(port), e)
             isRunning = false
-            serverSocket?.close()
-            serverSocket = null
+            webSocketServer = null
         }
     }
 
@@ -80,18 +96,29 @@ class NetworkGameServer(
 
     fun stop() {
         isRunning = false
-        serverSocket?.close()
+        try {
+            webSocketServer?.stop()
+        } catch (e: Exception) {
+            Log.d(TAG, "Error stopping WebSocket server", e)
+        }
+        webSocketServer = null
+        messageQueues.clear()
         clients.values.forEach { it.close() }
         clients.clear()
         serverScope.cancel()
         Log.i(TAG, "Network game server stopped")
     }
 
-    private suspend fun handleClientConnection(socket: Socket) {
-        val connection = ClientConnection(socket)
+    private suspend fun handleClientConnection(conn: WebSocket, queue: BlockingQueue<String>) {
+        val connection = ClientConnection(conn, queue)
 
         try {
-            val connectRequest = connection.receiveMessage()
+            var line = connection.receiveRaw() ?: return
+            if (SessionStartPayload.isSessionStart(line)) {
+                Log.d(TAG, "Received client session_start from ${conn.remoteSocketAddress}")
+                line = connection.receiveRaw() ?: return
+            }
+            val connectRequest = MessageSerializer.deserialize(line)
             if (connectRequest !is NetworkMessage.ConnectRequest) {
                 connection.sendMessage(NetworkMessage.Error(error = Constants.ERROR_MESSAGE_EXPECTED_CONNECT))
                 connection.close()
@@ -108,7 +135,7 @@ class NetworkGameServer(
             connection.playerId = playerId
             clients[playerId] = connection
 
-            Log.i(TAG, "Player ${playerId.name} connected from ${socket.remoteSocketAddress}")
+            Log.i(TAG, "Player ${playerId.name} connected from ${conn.remoteSocketAddress}")
 
             connection.sendMessage(
                 NetworkMessage.ConnectResponse(
@@ -123,11 +150,14 @@ class NetworkGameServer(
 
             connection.startListening()
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling client connection", e)
+            if (isRunning) {
+                Log.e(TAG, "Error handling client connection", e)
+            }
             connection.close()
             if (connection.playerId != null) {
                 clients.remove(connection.playerId)
             }
+            messageQueues.remove(conn)
         }
     }
 
@@ -169,7 +199,6 @@ class NetworkGameServer(
         )
 
         val initialFreezeTime = System.currentTimeMillis() + GameConstants.INITIAL_BALL_FREEZE_DURATION_MS
-        val matchId = UUID.randomUUID().toString()
         synchronized(gameStateLock) {
             gameState = GameState(
                 ball = ball,
@@ -350,40 +379,44 @@ class NetworkGameServer(
         }
     }
 
-    private inner class ClientConnection(private val socket: Socket) {
+    private inner class ClientConnection(
+        private val conn: WebSocket,
+        private val queue: BlockingQueue<String>
+    ) {
         var playerId: PlayerId? = null
-        private val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-        private val writer = PrintWriter(socket.getOutputStream(), true)
         private var isClosed = false
 
         fun sendMessage(message: NetworkMessage) {
-            if (!isClosed) {
+            if (!isClosed && conn.isOpen) {
                 try {
                     val json = MessageSerializer.serialize(message)
-                    writer.println(json)
-                    writer.flush()
+                    conn.send(json)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error sending message to player ${playerId?.name}", e)
                 }
             }
         }
 
-        suspend fun receiveMessage(): NetworkMessage {
+        suspend fun receiveRaw(): String? {
             return withContext(Dispatchers.IO) {
-                val line = reader.readLine() ?: throw Exception("Connection closed")
-                MessageSerializer.deserialize(line)
+                val line = queue.take()
+                if (line == SESSION_CLOSED_SENTINEL) null else line
             }
         }
 
         fun startListening() {
             serverScope.launch {
                 try {
-                    while (!isClosed && socket.isConnected) {
-                        val message = receiveMessage()
+                    while (!isClosed && conn.isOpen) {
+                        val line = receiveRaw() ?: break
+                        if (SessionStartPayload.isSessionStart(line)) {
+                            continue
+                        }
+                        val message = MessageSerializer.deserialize(line)
                         handleMessage(message)
                     }
                 } catch (e: Exception) {
-                    if (!isClosed) {
+                    if (!isClosed && isRunning) {
                         Log.e(TAG, "Error receiving message from player ${playerId?.name}", e)
                     }
                 } finally {
@@ -417,7 +450,7 @@ class NetworkGameServer(
             if (!isClosed) {
                 isClosed = true
                 try {
-                    socket.close()
+                    conn.close()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error closing client connection", e)
                 }

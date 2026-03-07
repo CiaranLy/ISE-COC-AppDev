@@ -8,20 +8,22 @@ import com.pong.mobile.game.Paddle
 import com.pong.mobile.game.PlayerId
 import com.pong.mobile.game.server.GameServer
 import kotlinx.coroutines.*
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.PrintWriter
-import java.net.Socket
+import org.java_websocket.client.WebSocketClient
+import org.java_websocket.handshake.ServerHandshake
+import java.net.URI
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.BlockingQueue
+import java.util.concurrent.TimeUnit
 
 class NetworkGameClient(
     private val host: String = Constants.LOCALHOST,
     private val port: Int = Constants.DEFAULT_SERVER_PORT
 ) : GameServer {
-    private var socket: Socket? = null
-    private var reader: BufferedReader? = null
-    private var writer: PrintWriter? = null
+    private var webSocketClient: GameWebSocketClient? = null
+    private val messageQueue: BlockingQueue<String> = ArrayBlockingQueue(256)
     private var connected = false
     private var localPlayerId: PlayerId? = null
+    private var sessionId: String = ""
     @Volatile
     private var gameState: GameState? = null
     @Volatile
@@ -30,6 +32,18 @@ class NetworkGameClient(
     private var pingStartTimeMs: Long = 0L
     private val clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    private inner class GameWebSocketClient(uri: URI, private val queue: BlockingQueue<String>) :
+        WebSocketClient(uri) {
+        override fun onMessage(message: String) {
+            queue.put(message)
+        }
+        override fun onClose(code: Int, reason: String, remote: Boolean) {}
+        override fun onError(ex: Exception) {
+            Log.e(TAG, "WebSocket error", ex)
+        }
+        override fun onOpen(handshakedata: ServerHandshake) {}
+    }
+
     override fun connect(): Boolean {
         if (connected) {
             Log.w(TAG, "Already connected to server")
@@ -37,16 +51,44 @@ class NetworkGameClient(
         }
 
         return try {
-            Log.i(TAG, "Creating socket connection to $host:$port")
-            socket = Socket(host, port)
-            reader = BufferedReader(InputStreamReader(socket!!.getInputStream()))
-            writer = PrintWriter(socket!!.getOutputStream(), true)
+            val uri = URI("ws://$host:$port")
+            Log.i(TAG, "Connecting via WebSocket to $uri")
+            webSocketClient = GameWebSocketClient(uri, messageQueue)
+            webSocketClient!!.connectBlocking(10, TimeUnit.SECONDS)
+            if (webSocketClient?.isOpen != true) {
+                Log.e(TAG, "WebSocket connection failed to open")
+                disconnect()
+                return false
+            }
+
+            val sessionStartRaw = messageQueue.poll(10, TimeUnit.SECONDS)
+                ?: run {
+                    Log.e(TAG, "Did not receive session_start from server")
+                    disconnect()
+                    return false
+                }
+            if (!SessionStartPayload.isSessionStart(sessionStartRaw)) {
+                Log.e(TAG, "Expected session_start, got: $sessionStartRaw")
+                disconnect()
+                return false
+            }
+            val sessionStart = SessionStartPayload.fromJson(sessionStartRaw)
+            sessionId = sessionStart.session_id
+            Log.i(TAG, "Session started at ${sessionStart.timestamp}, matchId=$sessionId")
+
+            sendRaw(SessionStartPayload.toJson(SessionStartPayload.create(sessionId = sessionId)))
 
             Log.i(TAG, "Sending ConnectRequest to server")
             sendMessage(NetworkMessage.ConnectRequest())
 
             Log.i(TAG, "Waiting for ConnectResponse from server")
-            val response = receiveMessage()
+            val responseRaw = messageQueue.poll(10, TimeUnit.SECONDS)
+                ?: run {
+                    Log.e(TAG, "Did not receive ConnectResponse from server")
+                    disconnect()
+                    return false
+                }
+            val response = MessageSerializer.deserialize(responseRaw)
             Log.i(TAG, "Received response: ${response.messageType}")
 
             if (response is NetworkMessage.ConnectResponse) {
@@ -79,13 +121,12 @@ class NetworkGameClient(
     override fun disconnect() {
         connected = false
         try {
-            socket?.close()
+            webSocketClient?.close()
         } catch (e: Exception) {
-            Log.e(TAG, "Error closing socket", e)
+            Log.e(TAG, "Error closing WebSocket", e)
         }
-        reader = null
-        writer = null
-        socket = null
+        webSocketClient = null
+        messageQueue.clear()
         clientScope.cancel()
         Log.i(TAG, "Disconnected from server")
     }
@@ -132,12 +173,14 @@ class NetworkGameClient(
     }
 
     override fun isConnected(): Boolean {
-        return connected && socket?.isConnected == true
+        return connected && webSocketClient?.isOpen == true
     }
 
     override fun getLocalPlayerId(): PlayerId {
         return localPlayerId ?: throw IllegalStateException("Not connected to server")
     }
+
+    fun getSessionId(): String = sessionId
 
     fun getLatencyMs(): Long = lastLatencyMs
 
@@ -148,30 +191,37 @@ class NetworkGameClient(
     }
 
     private fun sendMessage(message: NetworkMessage) {
-        if (writer != null) {
+        if (webSocketClient?.isOpen == true) {
             try {
                 val json = MessageSerializer.serialize(message)
-                writer!!.println(json)
-                writer!!.flush()
+                webSocketClient!!.send(json)
             } catch (e: Exception) {
                 Log.e(TAG, "Error sending message to server", e)
             }
         } else {
-            Log.w(TAG, "Cannot send message: writer is null")
+            Log.w(TAG, "Cannot send message: WebSocket is not open")
         }
     }
 
-    private fun receiveMessage(): NetworkMessage {
-        return runBlocking(Dispatchers.IO) {
-            val line = reader?.readLine() ?: throw Exception("Connection closed")
-            MessageSerializer.deserialize(line)
+    private fun sendRaw(json: String) {
+        if (webSocketClient?.isOpen == true) {
+            try {
+                webSocketClient!!.send(json)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending raw message to server", e)
+            }
         }
     }
 
     private suspend fun listenForMessages() {
-        while (connected && socket?.isConnected == true) {
+        while (connected && webSocketClient?.isOpen == true) {
             try {
-                val line = reader?.readLine() ?: break
+                val line = withContext(Dispatchers.IO) {
+                    messageQueue.take()
+                }
+                if (SessionStartPayload.isSessionStart(line) || !line.contains("\"messageType\"")) {
+                    continue
+                }
                 val message = MessageSerializer.deserialize(line)
                 handleMessage(message)
             } catch (e: Exception) {

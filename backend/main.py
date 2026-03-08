@@ -90,7 +90,8 @@ async def aggregate_data(
         collector_id=collector.id,
         graph_id=graph.id,
         content=data.content,
-        timestamp_utc=data.timestamp
+        timestamp_utc=data.timestamp,
+        session_id=data.session_id,
     )
 
     logger.info(

@@ -2,15 +2,50 @@ package com.pong.mobile.telemetry
 
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
+import com.pong.mobile.config.Config
 import com.pong.mobile.game.GameState
 import com.pong.mobile.game.PlayerId
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.Closeable
-import java.util.UUID
+import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+
+private val telemetryJson = Json {
+    encodeDefaults = true
+}
+
+@Serializable
+private data class SnapshotPayload(
+    val type: String = "snapshot",
+    val timestamp: String,
+    val latency_ms: Long,
+    val paddle_y: Float,
+    val collision_count: Int,
+    val session_id: String
+)
+
+@Serializable
+private data class SessionStartPayload(
+    val type: String = "session_start",
+    val timestamp: String,
+    val session_id: String
+)
+
+@Serializable
+private data class SessionEndPayload(
+    val type: String = "session_end",
+    val timestamp: String,
+    val session_id: String,
+    val duration_ms: Long,
+    val final_score_player1: Int,
+    val final_score_player2: Int
+)
 
 class TelemetryService : Closeable {
     private val firestore = FirebaseFirestore.getInstance()
@@ -18,11 +53,18 @@ class TelemetryService : Closeable {
 
     private var sessionId: String? = null
     private var gameStartTimeMs: Long = 0L
+    private var telemetryServer: TelemetryServer? = null
 
-    fun startSession(gameMode: String, playerId: String, deviceId: String) {
-        val id = UUID.randomUUID().toString()
-        sessionId = id
+    fun startSession(matchId: String, gameMode: String, playerId: String, deviceId: String) {
+        sessionId = matchId
+        val id = matchId
         gameStartTimeMs = System.currentTimeMillis()
+
+        telemetryServer = TelemetryServer(Config.current.telemetryPort).also {
+            it.isDaemon = true
+            it.start()
+        }
+        Log.i(TAG, "Telemetry server started on port ${Config.current.telemetryPort}")
 
         val sessionData =
                 hashMapOf(
@@ -41,6 +83,12 @@ class TelemetryService : Closeable {
                 Log.e(TAG, "Failed to create telemetry session", e)
             }
         }
+
+        val payload = SessionStartPayload(
+            timestamp = Instant.now().toString(),
+            session_id = id
+        )
+        telemetryServer?.broadcastTelemetry(telemetryJson.encodeToString(payload))
     }
 
     fun recordSnapshot(collisionCount: Int, latencyMs: Long, paddleY: Float) {
@@ -66,6 +114,15 @@ class TelemetryService : Closeable {
                 Log.e(TAG, "Failed to record telemetry snapshot", e)
             }
         }
+
+        val payload = SnapshotPayload(
+            timestamp = Instant.now().toString(),
+            latency_ms = latencyMs,
+            paddle_y = paddleY,
+            collision_count = collisionCount,
+            session_id = id
+        )
+        telemetryServer?.broadcastTelemetry(telemetryJson.encodeToString(payload))
     }
 
     fun endSession(finalState: GameState, localPlayerId: PlayerId) {
@@ -96,10 +153,21 @@ class TelemetryService : Closeable {
             }
         }
 
+        val payload = SessionEndPayload(
+            timestamp = Instant.now().toString(),
+            session_id = id,
+            duration_ms = durationMs,
+            final_score_player1 = finalState.player1Score,
+            final_score_player2 = finalState.player2Score
+        )
+        telemetryServer?.broadcastTelemetry(telemetryJson.encodeToString(payload))
+
         sessionId = null
     }
 
     override fun close() {
+        telemetryServer?.stopGracefully()
+        telemetryServer = null
         serviceScope.cancel()
         sessionId = null
     }

@@ -11,6 +11,7 @@ class DataPoint:
     content: float
     unit: str
     timestamp: datetime
+    session_id: str
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API request."""
@@ -18,5 +19,6 @@ class DataPoint:
             "collector_name": self.collector_name,
             "content": self.content,
             "unit": self.unit,
-            "timestamp": self.timestamp.isoformat()
+            "timestamp": self.timestamp.isoformat(),
+            "session_id": self.session_id,
         }

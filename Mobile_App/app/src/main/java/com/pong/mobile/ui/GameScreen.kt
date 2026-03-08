@@ -283,6 +283,7 @@ object GameScreen {
         LaunchedEffect(isGameRunning) {
             if (isGameRunning && localPlayerId != null) {
                 telemetryService.startSession(
+                    matchId = gameState?.matchId ?: "",
                     gameMode = gameMode,
                     playerId = localPlayerId.name,
                     deviceId = deviceId

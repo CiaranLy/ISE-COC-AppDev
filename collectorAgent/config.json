@@ -1,5 +1,5 @@
 {
-    "api_base_url": "http://localhost:8000/api/v1",
+    "api_base_url": "https://ise-coc-appdev.onrender.com/api/v1",
     "collector_name": "default_collector",
     "collection_interval_seconds": 5.0,
     "batch_size": 10,
@@ -13,6 +13,8 @@
     "num_sender_workers": 4,
     "ws_host": "localhost",
     "desktop_collector_ws_port": 6790,
+    "mobile_client_host": "localhost",
+    "mobile_client_port": 6790,
     "game_server_host": "localhost",
     "game_server_port": 8081,
     "reconnect_delay_seconds": 5.0,

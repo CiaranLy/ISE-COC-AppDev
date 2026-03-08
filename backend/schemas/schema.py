@@ -24,6 +24,7 @@ class DataIngestResponse(BaseModel):
     collector_id: int
     graph_id: int
     data_id: int
+    session_id: str
     message: str
     message_id: Optional[str] = None  # Echo back for acknowledgment
     acknowledged: bool = True  # Confirms receipt
@@ -57,6 +58,7 @@ class GraphWithDataResponse(BaseModel):
     id: int
     collector_id: int
     unit: str
+    session_id: str
     data_points: List[DataPoint]
     collector_name: str
 

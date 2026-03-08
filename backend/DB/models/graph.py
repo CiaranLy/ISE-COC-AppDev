@@ -12,6 +12,7 @@ class Graph(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     collector_id = Column(Integer, ForeignKey("collectors.id", ondelete="CASCADE"), nullable=False)
     unit = Column(String(50), nullable=False)
+    session_id = Column(String(255), nullable=False, index=True)
 
     collector = relationship("Collector", back_populates="graphs")
     data_points = relationship("Data", back_populates="graph", cascade="all, delete-orphan")

@@ -76,12 +76,13 @@ async def aggregate_data(
         collector = await collector_repo.create(display_name=data.collector_name)
 
     graph_repo = GraphRepository(session)
-    graph = await graph_repo.find_by_collector_and_unit(collector.id, data.unit)
+    graph = await graph_repo.find_by_collector_unit_and_session(collector.id, data.unit, data.session_id)
 
     if not graph:
         graph = await graph_repo.create(
             collector_id=collector.id,
-            unit=data.unit
+            unit=data.unit,
+            session_id=data.session_id,
         )
 
     data_repo = DataRepository(session)
@@ -104,6 +105,7 @@ async def aggregate_data(
         collector_id=collector.id,
         graph_id=graph.id,
         data_id=new_data.id,
+        session_id=data.session_id,
         message="Data ingested successfully",
         message_id=data.message_id,
         acknowledged=True
@@ -114,8 +116,8 @@ async def aggregate_data(
 async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
     """
     Get all graphs with their data points.
-    
-    Returns a list of all available graphs with their IDs, collector_ids, units, and associated data points.
+
+    Each graph is unique by (collector, unit, session_id).
     """
     graph_repo = GraphRepository(session)
     graphs = await graph_repo.get_all_with_data()
@@ -126,7 +128,8 @@ async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
             collector_id=graph.collector_id,
             collector_name=graph.collector.display_name,
             unit=graph.unit,
-            data_points=graph.data_points
+            session_id=graph.session_id,
+            data_points=graph.data_points,
         )
         for graph in graphs
     ]

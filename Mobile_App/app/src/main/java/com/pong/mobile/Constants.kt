@@ -32,6 +32,7 @@ object Constants {
     const val UI_BUTTON_SINGLEPLAYER = "Singleplayer"
     const val UI_BUTTON_FIND_MATCH = "Find Match"
     const val UI_BUTTON_SETTINGS = "Settings"
+    const val UI_BUTTON_MATCH_HISTORY = "Match History"
     const val UI_BUTTON_BACK = "Back"
     const val UI_BUTTON_SAVE = "Save"
     const val UI_SETTINGS_TITLE = "Settings"

@@ -1,7 +1,3 @@
-/**
- * Type definitions for the ISE-COC System Monitor
- */
-
 /** Individual data point from a collector */
 export interface DataPoint {
     id: number;
@@ -31,9 +27,4 @@ export interface ChartDataPoint {
     timestamp: string;
     fullTimestamp: string;
     value: number;
-}
-
-/** Health check response */
-export interface HealthResponse {
-    status: string;
 }

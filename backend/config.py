@@ -8,7 +8,7 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     # Database
-    database_url: str = Field("sqlite+aiosqlite:///./database_ise_coc.db")
+    database_url: str  # Set via DATABASE_URL environment variable
     db_echo: bool = Field(False)
 
     # API

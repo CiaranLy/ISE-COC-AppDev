@@ -361,11 +361,99 @@ body {
    Collector Sections
    ============================================ */
 
-.collectors-container {
+/* ============================================
+   Matrix Grid Layout — collectors × sessions
+   ============================================ */
+
+.matrix-grid {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  overflow: hidden;
+}
+
+/* Top-left blank corner */
+.matrix-corner {
+  background: rgba(10, 14, 26, 0.85);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Column headers — collector names */
+.matrix-col-header {
+  background: rgba(17, 24, 39, 0.95);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 2px solid rgba(255, 107, 0, 0.3);
+  padding: 1rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.matrix-col-header:last-child {
+  border-right: none;
+}
+
+/* Row headers — session IDs */
+.matrix-row-header {
+  background: rgba(10, 14, 26, 0.85);
+  border-right: 2px solid rgba(255, 107, 0, 0.3);
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 2.5rem;
+  justify-content: center;
+  gap: 0.2rem;
 }
+
+.session-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+
+.session-id-value {
+  font-size: 0.78rem;
+  color: var(--accent-orange-light);
+  font-family: 'Inter', monospace;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* Grid cells — graph cards for session × collector */
+.matrix-cell {
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem;
+  background: rgba(17, 24, 39, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 180px;
+}
+
+.matrix-cell:last-child {
+  border-right: none;
+}
+
+.matrix-cell-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 120px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  opacity: 0.5;
+}
+
 
 .collector-section {
   background: var(--bg-card);
@@ -392,6 +480,15 @@ body {
 
 .collector-icon {
   font-size: 1.15rem;
+}
+
+.session-subtitle {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  margin-top: 0.2rem;
+  font-family: 'Inter', monospace;
 }
 
 /* Net divider — mimics the center line on a table tennis table */
@@ -449,6 +546,16 @@ body {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.graph-title-session {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: 'Inter', monospace;
+  font-weight: 500;
 }
 
 .graph-unit {

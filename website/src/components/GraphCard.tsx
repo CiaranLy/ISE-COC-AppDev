@@ -87,7 +87,9 @@ function GraphCard({ graph, colorIndex }: GraphCardProps) {
         <div className="graph-card">
             <div className="graph-header">
                 <div className="graph-title-section">
-                    <h3 className="graph-title">{graph.collector_name}</h3>
+                    <h3 className="graph-title">
+                        {graph.collector_name} <span className="graph-title-session">• {graph.session_id}</span>
+                    </h3>
                     <span className="graph-unit">{graph.unit}</span>
                 </div>
                 {latestValue !== null && (

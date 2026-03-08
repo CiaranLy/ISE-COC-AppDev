@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, ChangeEvent } from 'react';
 import GraphCard from './GraphCard';
 import { fetchGraphs } from '../services/api';
-import { Graph, CollectorGroup } from '../types';
+import { Graph } from '../types';
 import { DEFAULT_REFRESH_INTERVAL_SECONDS } from '../config';
 
 /**
- * Dashboard — main page that fetches and displays all graphs
- * grouped by collector. Auto-refreshes at a configurable interval.
+ * Dashboard — displays all graphs in a matrix:
+ *   columns = collectors, rows = sessions
  */
 function Dashboard() {
     const [graphs, setGraphs] = useState<Graph[]>([]);
@@ -28,12 +28,8 @@ function Dashboard() {
         }
     }, []);
 
-    // Initial load
-    useEffect(() => {
-        loadGraphs();
-    }, [loadGraphs]);
+    useEffect(() => { loadGraphs(); }, [loadGraphs]);
 
-    // Auto-refresh
     useEffect(() => {
         if (refreshInterval > 0) {
             const interval = setInterval(loadGraphs, refreshInterval * 1000);
@@ -41,21 +37,34 @@ function Dashboard() {
         }
     }, [refreshInterval, loadGraphs]);
 
-    // Group graphs by collector
-    const groupedGraphs = useMemo((): CollectorGroup[] => {
-        const groups: Record<string, CollectorGroup> = {};
-        graphs.forEach((graph) => {
-            const key = graph.collector_name;
-            if (!groups[key]) {
-                groups[key] = {
-                    collector_name: graph.collector_name,
-                    collector_id: graph.collector_id,
-                    graphs: [],
-                };
+    // Unique session IDs — each becomes a row
+    const sessions = useMemo(() =>
+        [...new Set(graphs.map(g => g.session_id))],
+        [graphs]
+    );
+
+    // Unique collectors — each becomes a column
+    const collectors = useMemo(() => {
+        const seen = new Set<string>();
+        const result: { name: string; id: number }[] = [];
+        graphs.forEach(g => {
+            if (!seen.has(g.collector_name)) {
+                seen.add(g.collector_name);
+                result.push({ name: g.collector_name, id: g.collector_id });
             }
-            groups[key].graphs.push(graph);
         });
-        return Object.values(groups);
+        return result;
+    }, [graphs]);
+
+    // Matrix lookup: `session_id::collector_name` → graphs for that cell
+    const matrix = useMemo(() => {
+        const m: Record<string, Graph[]> = {};
+        graphs.forEach(g => {
+            const key = `${g.session_id}::${g.collector_name}`;
+            if (!m[key]) m[key] = [];
+            m[key].push(g);
+        });
+        return m;
     }, [graphs]);
 
     const handleRefreshChange = (e: ChangeEvent<HTMLSelectElement>) => {
@@ -128,20 +137,51 @@ function Dashboard() {
                         <p>Start a game to see analytics appear here automatically.</p>
                     </div>
                 ) : (
-                    <div className="collectors-container">
-                        {groupedGraphs.map((group) => (
-                            <section key={group.collector_id} className="collector-section">
-                                <h2 className="collector-title">
-                                    <span className="collector-icon">🏓</span>
-                                    {group.collector_name}
-                                </h2>
-                                <div className="net-divider"></div>
-                                <div className="graphs-grid">
-                                    {group.graphs.map((graph, index) => (
-                                        <GraphCard key={graph.id} graph={graph} colorIndex={index} />
-                                    ))}
+                    <div
+                        className="matrix-grid"
+                        style={{ gridTemplateColumns: `200px repeat(${collectors.length}, 1fr)` }}
+                    >
+                        {/* Top-left corner */}
+                        <div className="matrix-corner" />
+
+                        {/* Column headers — one per collector */}
+                        {collectors.map(collector => (
+                            <div key={collector.id} className="matrix-col-header">
+                                <span className="collector-icon">🏓</span>
+                                {collector.name}
+                            </div>
+                        ))}
+
+                        {/* Rows — one per session */}
+                        {sessions.map((sessionId, rowIndex) => (
+                            <>
+                                {/* Row header — session ID */}
+                                <div key={`row-${sessionId}`} className="matrix-row-header">
+                                    <span className="session-label">Session</span>
+                                    <span className="session-id-value">{sessionId}</span>
                                 </div>
-                            </section>
+
+                                {/* Cells — graphs for session × collector */}
+                                {collectors.map((collector, colIndex) => {
+                                    const key = `${sessionId}::${collector.name}`;
+                                    const cellGraphs = matrix[key] ?? [];
+                                    return (
+                                        <div key={key} className="matrix-cell">
+                                            {cellGraphs.length > 0 ? (
+                                                cellGraphs.map((graph, i) => (
+                                                    <GraphCard
+                                                        key={graph.id}
+                                                        graph={graph}
+                                                        colorIndex={colIndex + i}
+                                                    />
+                                                ))
+                                            ) : (
+                                                <div className="matrix-cell-empty">No data</div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </>
                         ))}
                     </div>
                 )}

@@ -4,6 +4,7 @@ export interface DataPoint {
     content: number;
     timestamp_utc: string;
     collector_id: number;
+    session_id: string;
 }
 
 /** Graph with associated data points */
@@ -12,13 +13,15 @@ export interface Graph {
     collector_id: number;
     collector_name: string;
     unit: string;
+    session_id: string;
     data_points: DataPoint[];
 }
 
-/** Grouped graphs by collector */
+/** Graphs grouped by collector + session */
 export interface CollectorGroup {
     collector_name: string;
     collector_id: number;
+    session_id: string;
     graphs: Graph[];
 }
 

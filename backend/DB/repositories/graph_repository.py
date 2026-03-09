@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from DB.models.graph import Graph
@@ -22,6 +22,11 @@ class GraphRepository(AsyncRepository[Graph]):
         )
         result = await self.async_session.execute(query)
         return result.scalars().first()
+
+    async def update_max_value(self, graph_id: int, max_value) -> bool:
+        query = update(Graph).where(Graph.id == graph_id).values(max_value=max_value)
+        result = await self.async_session.execute(query)
+        return result.rowcount > 0
 
     async def get_all_with_data(self, limit: int = 1000) -> List[Graph]:
         """Get all graphs with their data points and collector eagerly loaded."""

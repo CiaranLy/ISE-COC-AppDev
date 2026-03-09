@@ -11,6 +11,7 @@ export interface Graph {
     unit: string;
     session_id: string;
     data_points: DataPoint[];
+    max_value?: number | null;
 }
 
 /** Graphs grouped by collector + session */

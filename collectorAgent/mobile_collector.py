@@ -16,6 +16,7 @@ import json
 import sys
 from datetime import datetime, timezone
 
+import aiohttp
 import websockets
 
 from config_manager import config as app_config
@@ -27,6 +28,7 @@ logger = get_logger("mobile_pong")
 
 COLLECTOR_NAME = "mobile_pong"
 DEFAULT_WS_PORT = 6790
+ALERT_POLL_INTERVAL_SECONDS = 2
 
 MSG_TYPE_SNAPSHOT = "snapshot"
 MSG_TYPE_SESSION_START = "session_start"
@@ -144,6 +146,40 @@ class MobileCollector:
             session_id=session_id,
         )
 
+    async def _alert_poller(self, websocket):
+        """Poll the backend for pending alerts and forward them to the mobile client."""
+        api_base_url = app_config.get("api_base_url", "http://localhost:8000/api/v1")
+        pending_url = f"{api_base_url}/alerts/pending"
+        ack_url_template = f"{api_base_url}/alerts/{{alert_id}}/acknowledge"
+
+        async with aiohttp.ClientSession() as http:
+            while True:
+                await asyncio.sleep(ALERT_POLL_INTERVAL_SECONDS)
+                try:
+                    async with http.get(pending_url, params={"collector_name": self.collector_name}) as resp:
+                        if resp.status != 200:
+                            continue
+                        alerts = await resp.json()
+
+                    for alert in alerts:
+                        alert_id = alert["id"]
+                        message = json.dumps({
+                            "type": "high_ping_alert",
+                            "value": alert["value"],
+                            "threshold": alert["threshold"],
+                            "unit": alert["unit"],
+                        })
+                        await websocket.send(message)
+                        logger.info(
+                            "Forwarded high_ping_alert to mobile client: value=%.1f threshold=%.1f",
+                            alert["value"], alert["threshold"],
+                        )
+                        async with http.post(ack_url_template.format(alert_id=alert_id)) as _:
+                            pass
+
+                except Exception as e:
+                    logger.debug("Alert poll error: %s", e)
+
     async def run(self):
         logger.info("Starting %s collector...", self.collector_name)
 
@@ -153,13 +189,17 @@ class MobileCollector:
             try:
                 async with websockets.connect(server_url) as websocket:
                     logger.info("Connected to mobile client")
-                    async for message in websocket:
-                        data_points = self.process_message(message)
-                        for dp in data_points:
-                            self.queue.send(dp.to_dict())
+                    poller_task = asyncio.create_task(self._alert_poller(websocket))
+                    try:
+                        async for message in websocket:
+                            data_points = self.process_message(message)
+                            for dp in data_points:
+                                self.queue.send(dp.to_dict())
 
-                        if data_points:
-                            logger.debug("Forwarded %d points", len(data_points))
+                            if data_points:
+                                logger.debug("Forwarded %d points", len(data_points))
+                    finally:
+                        poller_task.cancel()
 
             except (websockets.ConnectionClosed, OSError) as e:
                 delay = app_config.get("reconnect_delay_seconds", 5.0)

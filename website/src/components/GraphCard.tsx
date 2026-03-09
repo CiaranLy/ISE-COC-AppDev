@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
     XAxis,
     YAxis,
@@ -9,6 +9,7 @@ import {
     AreaChart,
 } from 'recharts';
 import { Graph, ChartDataPoint } from '../types';
+import { updateThreshold, createAlert } from '../services/api';
 
 /** Curated ping-pong themed color palette */
 const CHART_COLORS = [
@@ -59,6 +60,12 @@ function CustomTooltip({ active, payload, unit, color }: CustomTooltipProps) {
  */
 function GraphCard({ graph, colorIndex }: GraphCardProps) {
     const chartColor = CHART_COLORS[colorIndex % CHART_COLORS.length];
+    const isLatencyGraph = graph.unit.toLowerCase().includes('latency');
+    const [maxPingInput, setMaxPingInput] = useState<string>(
+        graph.max_value != null ? String(graph.max_value) : ''
+    );
+    // Track whether we've already fired an alert for the current breach so we don't spam
+    const alertFiredRef = useRef(false);
 
     const chartData = useMemo((): ChartDataPoint[] => {
         if (!graph.data_points?.length) return [];
@@ -84,6 +91,22 @@ function GraphCard({ graph, colorIndex }: GraphCardProps) {
         ? chartData[chartData.length - 1].value
         : null;
 
+    // Threshold breach detection — fires once per breach, resets when value drops back below
+    const maxPing = graph.max_value != null ? graph.max_value : null;
+    const isBreaching = maxPing !== null && latestValue !== null && latestValue > maxPing;
+    if (isBreaching && !alertFiredRef.current) {
+        alertFiredRef.current = true;
+        createAlert(graph.collector_name, graph.unit, latestValue, maxPing).catch(() => {});
+    } else if (!isBreaching) {
+        alertFiredRef.current = false;
+    }
+
+    function handleMaxPingCommit() {
+        const parsed = maxPingInput.trim() === '' ? null : parseFloat(maxPingInput);
+        if (parsed !== null && isNaN(parsed)) return;
+        updateThreshold(graph.id, parsed).catch(() => {});
+    }
+
     return (
         <div className="graph-card">
             <div className="graph-header">
@@ -94,7 +117,7 @@ function GraphCard({ graph, colorIndex }: GraphCardProps) {
                     <span className="graph-unit">{graph.unit}</span>
                 </div>
                 {(latestValue !== null && latestValue !== undefined) && (
-                    <div className="graph-current-value" style={{ color: chartColor }}>
+                    <div className="graph-current-value" style={{ color: isBreaching ? '#ef4444' : chartColor }}>
                         {Number(latestValue).toFixed(2)}
                     </div>
                 )}
@@ -146,6 +169,21 @@ function GraphCard({ graph, colorIndex }: GraphCardProps) {
                 <span className="graph-data-count">
                     {chartData.length} point{chartData.length !== 1 ? 's' : ''} recorded
                 </span>
+                {isLatencyGraph && (
+                    <div className="graph-max-ping">
+                        <label className="graph-max-ping-label">Max ping (ms):</label>
+                        <input
+                            className="graph-max-ping-input"
+                            type="number"
+                            min="0"
+                            placeholder="—"
+                            value={maxPingInput}
+                            onChange={e => setMaxPingInput(e.target.value)}
+                            onBlur={handleMaxPingCommit}
+                            onKeyDown={e => { if (e.key === 'Enter') handleMaxPingCommit(); }}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );

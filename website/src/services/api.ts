@@ -21,3 +21,30 @@ export async function fetchGraphs(): Promise<Graph[]> {
 
     return response.json();
 }
+
+/**
+ * Set or clear the max_value threshold for a graph.
+ */
+export async function updateThreshold(graphId: number, maxValue: number | null): Promise<void> {
+    await fetch(`${API_BASE_URL}/graphs/${graphId}/threshold`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_value: maxValue }),
+    });
+}
+
+/**
+ * Create an alert when a live value exceeds a threshold.
+ */
+export async function createAlert(
+    collectorName: string,
+    unit: string,
+    value: number,
+    threshold: number,
+): Promise<void> {
+    await fetch(`${API_BASE_URL}/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collector_name: collectorName, unit, value, threshold }),
+    });
+}

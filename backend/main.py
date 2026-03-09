@@ -2,15 +2,15 @@ from collections import deque
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import APIRouter, Depends, FastAPI, Request, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas import DataIngest, DataIngestResponse, ErrorResponse, GraphWithDataResponse, SimpleDataPoint
+from schemas import AlertCreate, AlertResponse, DataIngest, DataIngestResponse, ErrorResponse, GraphWithDataResponse, SimpleDataPoint, ThresholdUpdate
 from config import API_TITLE, API_VERSION, CORS_ORIGINS, UVICORN_HOST, UVICORN_PORT, UVICORN_WORKERS
 from DB.database import get_async_session, init_db
-from DB.repositories import CollectorRepository, DataRepository, GraphRepository
+from DB.repositories import AlertRepository, CollectorRepository, DataRepository, GraphRepository
 from log_config import get_logger
 
 logger = get_logger("main")
@@ -145,6 +145,7 @@ async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
             collector_name=graph.collector.display_name,
             unit=graph.unit,
             session_id=graph.session_id,
+            max_value=graph.max_value,
             data_points=[
                 SimpleDataPoint(
                     timestamp=point.timestamp_utc.timestamp(),
@@ -155,6 +156,74 @@ async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
         )
         for graph in graphs
     ]
+
+
+@v1.put("/graphs/{graph_id}/threshold", response_model=None, status_code=204)
+async def set_graph_threshold(
+    graph_id: int,
+    body: ThresholdUpdate,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Set or clear the max_value threshold for a graph."""
+    graph_repo = GraphRepository(session)
+    await graph_repo.update_max_value(graph_id, body.max_value)
+    logger.info("Updated threshold for graph %d: %s", graph_id, body.max_value)
+
+
+@v1.post("/alerts", response_model=AlertResponse, status_code=201)
+async def create_alert(
+    body: AlertCreate,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Create an alert when a value exceeds its threshold."""
+    alert_repo = AlertRepository(session)
+    alert = await alert_repo.create(
+        collector_name=body.collector_name,
+        unit=body.unit,
+        value=body.value,
+        threshold=body.threshold,
+    )
+    logger.info(
+        "Alert created: collector=%s unit=%s value=%s threshold=%s",
+        body.collector_name, body.unit, body.value, body.threshold,
+    )
+    return AlertResponse(
+        id=alert.id,
+        collector_name=alert.collector_name,
+        unit=alert.unit,
+        value=alert.value,
+        threshold=alert.threshold,
+    )
+
+
+@v1.get("/alerts/pending", response_model=list[AlertResponse])
+async def get_pending_alerts(
+    collector_name: str = Query(...),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Get unacknowledged alerts for a collector."""
+    alert_repo = AlertRepository(session)
+    alerts = await alert_repo.get_pending(collector_name)
+    return [
+        AlertResponse(
+            id=a.id,
+            collector_name=a.collector_name,
+            unit=a.unit,
+            value=a.value,
+            threshold=a.threshold,
+        )
+        for a in alerts
+    ]
+
+
+@v1.post("/alerts/{alert_id}/acknowledge", response_model=None, status_code=204)
+async def acknowledge_alert(
+    alert_id: int,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Mark an alert as acknowledged."""
+    alert_repo = AlertRepository(session)
+    await alert_repo.acknowledge(alert_id)
 
 
 app.include_router(v1)

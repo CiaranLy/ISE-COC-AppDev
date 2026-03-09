@@ -57,5 +57,34 @@ class GraphWithDataResponse(BaseModel):
     session_id: str
     data_points: List[SimpleDataPoint]
     collector_name: str
+    max_value: Optional[float] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ThresholdUpdate(BaseModel):
+    """Request schema for updating a graph's max_value threshold."""
+    max_value: Optional[float]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AlertCreate(BaseModel):
+    """Request schema for creating an alert."""
+    collector_name: str
+    unit: str
+    value: float
+    threshold: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AlertResponse(BaseModel):
+    """Response schema for alerts."""
+    id: int
+    collector_name: str
+    unit: str
+    value: float
+    threshold: float
 
     model_config = ConfigDict(from_attributes=True)

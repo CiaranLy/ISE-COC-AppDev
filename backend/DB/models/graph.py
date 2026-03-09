@@ -1,6 +1,6 @@
 """Graph model."""
 
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Float, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
 
 from DB.models.base import Base
@@ -13,6 +13,7 @@ class Graph(Base):
     collector_id = Column(Integer, ForeignKey("collectors.id", ondelete="CASCADE"), nullable=False)
     unit = Column(String(50), nullable=False)
     session_id = Column(String(255), nullable=False, index=True)
+    max_value = Column(Float, nullable=True)
 
     collector = relationship("Collector", back_populates="graphs")
     data_points = relationship("Data", back_populates="graph", cascade="all, delete-orphan")

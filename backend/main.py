@@ -2,12 +2,12 @@ from collections import deque
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas import DataIngest, DataIngestResponse, ErrorResponse, GraphWithDataResponse
+from schemas import DataIngest, DataIngestResponse, ErrorResponse, GraphWithDataResponse, SimpleDataPoint
 from config import API_TITLE, API_VERSION, CORS_ORIGINS, UVICORN_HOST, UVICORN_PORT, UVICORN_WORKERS
 from DB.database import get_async_session, init_db
 from DB.repositories import CollectorRepository, DataRepository, GraphRepository
@@ -124,6 +124,7 @@ async def aggregate_data(
     )
 
 
+
 @v1.get("/graphs", response_model=List[GraphWithDataResponse])
 async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
     """
@@ -134,6 +135,9 @@ async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
     graph_repo = GraphRepository(session)
     graphs = await graph_repo.get_all_with_data()
 
+    if not graphs:
+        raise HTTPException(status_code=400, detail="No graphs available to display.")
+
     return [
         GraphWithDataResponse(
             id=graph.id,
@@ -141,7 +145,13 @@ async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
             collector_name=graph.collector.display_name,
             unit=graph.unit,
             session_id=graph.session_id,
-            data_points=graph.data_points,
+            data_points=[
+                SimpleDataPoint(
+                    timestamp=point.timestamp_utc.timestamp(),
+                    value=point.content
+                )
+                for point in sorted(graph.data_points, key=lambda p: p.timestamp_utc)
+            ],
         )
         for graph in graphs
     ]

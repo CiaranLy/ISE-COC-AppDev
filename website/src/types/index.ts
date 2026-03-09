@@ -1,10 +1,6 @@
-/** Individual data point from a collector */
 export interface DataPoint {
-    id: number;
-    content: number;
-    timestamp_utc: string;
-    collector_id: number;
-    session_id: string;
+    timestamp: number;
+    value: number;
 }
 
 /** Graph with associated data points */

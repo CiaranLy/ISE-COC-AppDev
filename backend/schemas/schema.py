@@ -41,16 +41,12 @@ class ErrorResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class DataPoint(BaseModel):
-    """Schema for individual data points."""
-    id: int
-    content: float
-    timestamp_utc: datetime
-    collector_id: int
-    session_id: str
+class SimpleDataPoint(BaseModel):
+    """Extremely lightweight schema for massive data arrays, with basic labels."""
+    timestamp: float
+    value: float
 
     model_config = ConfigDict(from_attributes=True)
-
 
 
 class GraphWithDataResponse(BaseModel):
@@ -59,7 +55,7 @@ class GraphWithDataResponse(BaseModel):
     collector_id: int
     unit: str
     session_id: str
-    data_points: List[DataPoint]
+    data_points: List[SimpleDataPoint]
     collector_name: str
 
     model_config = ConfigDict(from_attributes=True)

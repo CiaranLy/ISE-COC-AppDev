@@ -37,13 +37,9 @@ function Dashboard() {
         }
     }, [refreshInterval, loadGraphs]);
 
-    // Unique session IDs — each becomes a row
-    const sessions = useMemo(() =>
-        [...new Set(graphs.map(g => g.session_id))],
-        [graphs]
-    );
+    const [activeCollector, setActiveCollector] = useState<string | null>(null);
 
-    // Unique collectors — each becomes a column
+    // Unique collectors for tabs
     const collectors = useMemo(() => {
         const seen = new Set<string>();
         const result: { name: string; id: number }[] = [];
@@ -56,16 +52,24 @@ function Dashboard() {
         return result;
     }, [graphs]);
 
-    // Matrix lookup: `session_id::collector_name` → graphs for that cell
-    const matrix = useMemo(() => {
-        const m: Record<string, Graph[]> = {};
-        graphs.forEach(g => {
-            const key = `${g.session_id}::${g.collector_name}`;
-            if (!m[key]) m[key] = [];
-            m[key].push(g);
+    useEffect(() => {
+        if (collectors.length > 0 && !activeCollector) {
+            setActiveCollector(collectors[0].name);
+        } else if (collectors.length > 0 && activeCollector && !collectors.find(c => c.name === activeCollector)) {
+            setActiveCollector(collectors[0].name);
+        }
+    }, [collectors, activeCollector]);
+
+    // Active collector's graphs grouped by session
+    const sessionsForActive = useMemo(() => {
+        const activeGraphs = graphs.filter(g => g.collector_name === activeCollector);
+        const sessionMap: Record<string, Graph[]> = {};
+        activeGraphs.forEach(g => {
+            if (!sessionMap[g.session_id]) sessionMap[g.session_id] = [];
+            sessionMap[g.session_id].push(g);
         });
-        return m;
-    }, [graphs]);
+        return sessionMap;
+    }, [graphs, activeCollector]);
 
     const handleRefreshChange = (e: ChangeEvent<HTMLSelectElement>) => {
         setRefreshInterval(parseInt(e.target.value, 10));
@@ -137,52 +141,44 @@ function Dashboard() {
                         <p>Start a game to see analytics appear here automatically.</p>
                     </div>
                 ) : (
-                    <div
-                        className="matrix-grid"
-                        style={{ gridTemplateColumns: `200px repeat(${collectors.length}, 1fr)` }}
-                    >
-                        {/* Top-left corner */}
-                        <div className="matrix-corner" />
+                    <div className="dashboard-tabs-container">
+                        <div className="dashboard-tabs">
+                            {collectors.map(collector => (
+                                <button
+                                    key={collector.id}
+                                    className={`tab-button ${activeCollector === collector.name ? 'active' : ''}`}
+                                    onClick={() => setActiveCollector(collector.name)}
+                                >
+                                    <span className="collector-icon">🏓</span>
+                                    {collector.name}
+                                </button>
+                            ))}
+                        </div>
 
-                        {/* Column headers — one per collector */}
-                        {collectors.map(collector => (
-                            <div key={collector.id} className="matrix-col-header">
-                                <span className="collector-icon">🏓</span>
-                                {collector.name}
-                            </div>
-                        ))}
-
-                        {/* Rows — one per session */}
-                        {sessions.map((sessionId, rowIndex) => (
-                            <>
-                                {/* Row header — session ID */}
-                                <div key={`row-${sessionId}`} className="matrix-row-header">
-                                    <span className="session-label">Session</span>
-                                    <span className="session-id-value">{sessionId}</span>
+                        <div className="tab-content">
+                            {Object.entries(sessionsForActive).map(([sessionId, sessionGraphs], sIdx) => (
+                                <div key={sessionId} className="session-section">
+                                    <div className="session-header">
+                                        <h2 className="session-title">Session</h2>
+                                        <span className="session-id-badge">{sessionId}</span>
+                                    </div>
+                                    <div className="graphs-grid">
+                                        {sessionGraphs.map((graph, i) => (
+                                            <GraphCard
+                                                key={graph.id}
+                                                graph={graph}
+                                                // Generate color index deterministically
+                                                colorIndex={i}
+                                            />
+                                        ))}
+                                    </div>
+                                    {/* Don't show net divider after the last session */}
+                                    {sIdx < Object.keys(sessionsForActive).length - 1 && (
+                                        <div className="net-divider"></div>
+                                    )}
                                 </div>
-
-                                {/* Cells — graphs for session × collector */}
-                                {collectors.map((collector, colIndex) => {
-                                    const key = `${sessionId}::${collector.name}`;
-                                    const cellGraphs = matrix[key] ?? [];
-                                    return (
-                                        <div key={key} className="matrix-cell">
-                                            {cellGraphs.length > 0 ? (
-                                                cellGraphs.map((graph, i) => (
-                                                    <GraphCard
-                                                        key={graph.id}
-                                                        graph={graph}
-                                                        colorIndex={colIndex + i}
-                                                    />
-                                                ))
-                                            ) : (
-                                                <div className="matrix-cell-empty">No data</div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </>
-                        ))}
+                            ))}
+                        </div>
                     </div>
                 )}
             </main>

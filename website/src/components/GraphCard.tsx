@@ -65,18 +65,19 @@ function GraphCard({ graph, colorIndex }: GraphCardProps) {
 
         return graph.data_points
             .slice()
-            .sort((a, b) =>
-                new Date(a.timestamp_utc).getTime() - new Date(b.timestamp_utc).getTime()
-            )
-            .map((point) => ({
-                timestamp: new Date(point.timestamp_utc).toLocaleTimeString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                }),
-                fullTimestamp: new Date(point.timestamp_utc).toLocaleString(),
-                value: point.content,
-            }));
+            .sort((a, b) => a.timestamp - b.timestamp)
+            .map((point) => {
+                const dateObj = new Date(point.timestamp * 1000);
+                return {
+                    timestamp: dateObj.toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                    }),
+                    fullTimestamp: dateObj.toLocaleString(),
+                    value: point.value,
+                };
+            });
     }, [graph.data_points]);
 
     const latestValue = chartData.length > 0
@@ -92,9 +93,9 @@ function GraphCard({ graph, colorIndex }: GraphCardProps) {
                     </h3>
                     <span className="graph-unit">{graph.unit}</span>
                 </div>
-                {latestValue !== null && (
+                {(latestValue !== null && latestValue !== undefined) && (
                     <div className="graph-current-value" style={{ color: chartColor }}>
-                        {latestValue.toFixed(2)}
+                        {Number(latestValue).toFixed(2)}
                     </div>
                 )}
             </div>

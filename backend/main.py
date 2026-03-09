@@ -1,3 +1,4 @@
+from collections import deque
 from contextlib import asynccontextmanager
 from typing import List
 
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan)
+recent_data_cache = deque(maxlen=50)
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,7 +50,7 @@ v1 = APIRouter(prefix="/api/v1")
 
 @app.get("/")
 async def root():
-    return {"message": "Data Collector API"}
+    return {"message": "Data Collector API", "recent_data": list(recent_data_cache)}
 
 
 @app.get("/health")
@@ -99,6 +101,16 @@ async def aggregate_data(
         "Ingested data: collector=%s graph=%d value=%s unit=%s",
         data.collector_name, graph.id, data.content, data.unit,
     )
+
+    recent_data_cache.appendleft({
+        "collector_name": data.collector_name,
+        "content": data.content,
+        "unit": data.unit,
+        "session_id": data.session_id,
+        "timestamp": data.timestamp.isoformat(),
+        "message_id": data.message_id
+    })
+
 
     return DataIngestResponse(
         success=True,

@@ -123,9 +123,7 @@ function Dashboard() {
                 if (collectors && collectors.length > 0) {
                     const mapped = collectors.map(c => ({ name: c.display_name, id: c.id }));
                     setAllCollectors(mapped);
-                    if (!activeCollector) {
-                        setActiveCollector(mapped[0].name);
-                    }
+                    setActiveCollector(prev => prev || mapped[0].name);
                 }
             } catch (err) {
                 console.error("Failed to fetch collectors:", err);

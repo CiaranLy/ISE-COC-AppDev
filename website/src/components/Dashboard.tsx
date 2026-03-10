@@ -98,20 +98,8 @@ function Dashboard() {
             }
         } finally {
             setLoadingMore(false);
-            const MIN_BLOCK_MS = 2000;
-            const startedAt = blockingStartRef.current ?? 0;
-            const elapsed = startedAt ? Date.now() - startedAt : MIN_BLOCK_MS;
-            const remaining = Math.max(MIN_BLOCK_MS - elapsed, 0);
-
-            if (remaining === 0) {
-                setIsBlockingLoad(false);
-                blockingStartRef.current = null;
-            } else {
-                window.setTimeout(() => {
-                    setIsBlockingLoad(false);
-                    blockingStartRef.current = null;
-                }, remaining);
-            }
+            setIsBlockingLoad(false);
+            blockingStartRef.current = null;
         }
     }, [graphs, hasMoreSessions, loadingMore]);
 

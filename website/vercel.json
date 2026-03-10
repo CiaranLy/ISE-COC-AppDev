@@ -1,7 +1,6 @@
 {
     "buildCommand": "npm run build",
-    "outputDirectory": "website/build",
-    "installCommand": "cd website && npm install --legacy-peer-deps",
-    "framework": "create-react-app",
-    "rootDirectory": "website"
+    "outputDirectory": "build",
+    "installCommand": "npm install --legacy-peer-deps",
+    "framework": "create-react-app"
 }

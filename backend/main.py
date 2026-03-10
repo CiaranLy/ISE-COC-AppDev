@@ -126,17 +126,26 @@ async def aggregate_data(
 
 
 @v1.get("/graphs", response_model=List[GraphWithDataResponse])
-async def get_all_graphs(session: AsyncSession = Depends(get_async_session)):
+async def get_all_graphs(
+    session: AsyncSession = Depends(get_async_session),
+    session_offset: int = Query(0, ge=0),
+    session_limit: int = Query(3, ge=1, le=100),
+):
     """
-    Get all graphs with their data points.
+    Get graphs for a window of sessions with their data points.
 
+    Sessions are ordered by most recent data point (newest session first).
     Each graph is unique by (collector, unit, session_id).
     """
     graph_repo = GraphRepository(session)
-    graphs = await graph_repo.get_all_with_data()
+    graphs = await graph_repo.get_sessions_with_data(
+        session_offset=session_offset,
+        session_limit=session_limit,
+    )
 
     if not graphs:
-        raise HTTPException(status_code=400, detail="No graphs available to display.")
+        # Use 404 to indicate that we've paged past the available sessions
+        raise HTTPException(status_code=404, detail="No graphs available for this page.")
 
     return [
         GraphWithDataResponse(

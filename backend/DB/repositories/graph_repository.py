@@ -2,10 +2,11 @@
 
 from typing import List, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 
 from DB.models.graph import Graph
+from DB.models.data import Data
 from DB.repositories.base import AsyncRepository
 
 
@@ -34,6 +35,41 @@ class GraphRepository(AsyncRepository[Graph]):
             select(Graph)
             .options(selectinload(Graph.data_points), selectinload(Graph.collector))
             .limit(limit)
+        )
+        result = await self.async_session.execute(query)
+        return list(result.scalars().all())
+
+    async def get_sessions_with_data(
+        self,
+        session_offset: int,
+        session_limit: int,
+    ) -> List[Graph]:
+        """
+        Get graphs for a window of sessions, ordered by most recently updated session.
+
+        A "session" here is defined by Graph.session_id. We determine recency by the
+        latest Data.timestamp_utc within each session across all graphs.
+        """
+        # First, find the window of session_ids ordered by latest data timestamp (newest first)
+        session_subquery = (
+            select(
+                Graph.session_id,
+                func.max(Data.timestamp_utc).label("last_ts"),
+            )
+            .join(Data, Data.graph_id == Graph.id)
+            .group_by(Graph.session_id)
+            .order_by(func.max(Data.timestamp_utc).desc())
+            .offset(session_offset)
+            .limit(session_limit)
+            .subquery()
+        )
+
+        # Then, fetch all graphs that belong to those sessions, with eager-loaded relations
+        query = (
+            select(Graph)
+            .join(session_subquery, Graph.session_id == session_subquery.c.session_id)
+            .options(selectinload(Graph.data_points), selectinload(Graph.collector))
+            .order_by(session_subquery.c.last_ts.desc(), Graph.collector_id, Graph.unit)
         )
         result = await self.async_session.execute(query)
         return list(result.scalars().all())

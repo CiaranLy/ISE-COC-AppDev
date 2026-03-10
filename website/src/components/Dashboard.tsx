@@ -11,14 +11,26 @@ import { DEFAULT_REFRESH_INTERVAL_SECONDS } from '../config';
 function Dashboard() {
     const [graphs, setGraphs] = useState<Graph[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [refreshInterval, setRefreshInterval] = useState(DEFAULT_REFRESH_INTERVAL_SECONDS);
+    const [hasMoreSessions, setHasMoreSessions] = useState(true);
+
+    const countUniqueSessions = (items: Graph[]): number => {
+        const seen = new Set<string>();
+        items.forEach(g => seen.add(g.session_id));
+        return seen.size;
+    };
+
+    const SESSIONS_PER_PAGE = 3;
 
     const loadGraphs = useCallback(async () => {
         try {
-            const data = await fetchGraphs();
+            // Manual/auto refresh: always reload from the first page of sessions
+            const data = await fetchGraphs(0, SESSIONS_PER_PAGE);
             setGraphs(data);
+            setHasMoreSessions(countUniqueSessions(data) === SESSIONS_PER_PAGE);
             setLastUpdated(new Date());
             setError(null);
         } catch (err) {
@@ -28,7 +40,55 @@ function Dashboard() {
         }
     }, []);
 
+    const loadMoreSessions = useCallback(async () => {
+        if (loadingMore || !hasMoreSessions) return;
+
+        setLoadingMore(true);
+        try {
+            const currentSessionCount = countUniqueSessions(graphs);
+            const nextOffset = currentSessionCount;
+            const data = await fetchGraphs(nextOffset, SESSIONS_PER_PAGE);
+
+            if (!data.length) {
+                setHasMoreSessions(false);
+            } else {
+                // Merge new graphs, avoiding duplicates
+                const existingIds = new Set(graphs.map(g => g.id));
+                const merged = [...graphs];
+                data.forEach(g => {
+                    if (!existingIds.has(g.id)) merged.push(g);
+                });
+                setGraphs(merged);
+
+                const newSessionCount = countUniqueSessions(merged);
+                if (newSessionCount < nextOffset + SESSIONS_PER_PAGE) {
+                    setHasMoreSessions(false);
+                }
+            }
+            setError(null);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load more sessions');
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [graphs, hasMoreSessions, loadingMore]);
+
     useEffect(() => { loadGraphs(); }, [loadGraphs]);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            if (!hasMoreSessions || loadingMore) return;
+
+            const scrollPosition = window.innerHeight + window.scrollY;
+            const threshold = document.body.offsetHeight - 300; // 300px from bottom
+            if (scrollPosition >= threshold) {
+                loadMoreSessions();
+            }
+        };
+
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [hasMoreSessions, loadingMore, loadMoreSessions]);
 
     useEffect(() => {
         if (refreshInterval > 0) {

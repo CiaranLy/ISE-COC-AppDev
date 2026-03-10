@@ -2,10 +2,19 @@ import { Graph } from '../types';
 import { API_BASE_URL } from '../config';
 
 /**
- * Fetch all graphs with their data points from the backend.
+ * Fetch graphs for a window of sessions with their data points from the backend.
+ *
+ * Sessions are paginated using `session_offset` (0-based) and `session_limit`.
  */
-export async function fetchGraphs(): Promise<Graph[]> {
-    const response = await fetch(`${API_BASE_URL}/graphs`);
+export async function fetchGraphs(
+    sessionOffset = 0,
+    sessionLimit = 3,
+): Promise<Graph[]> {
+    const params = new URLSearchParams({
+        session_offset: String(sessionOffset),
+        session_limit: String(sessionLimit),
+    });
+    const response = await fetch(`${API_BASE_URL}/graphs?${params.toString()}`);
 
     if (!response.ok) {
         let errorMessage = `Failed to fetch graphs: ${response.status} ${response.statusText}`;

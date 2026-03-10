@@ -44,7 +44,6 @@ private data class ViewportInfo(val scale: Float, val offsetX: Float, val offset
 object GameScreen {
     private const val TAG = "GameScreen"
     private const val TELEMETRY_SNAPSHOT_INTERVAL_MS = 500L
-    private const val TELEMETRY_LATENCY_WAIT_MS = 50L
 
     private fun getPaddleForPlayer(playerId: PlayerId, gameState: GameState): Paddle {
         return if (playerId == PlayerId.Player1) gameState.player1Paddle else gameState.player2Paddle
@@ -109,6 +108,18 @@ object GameScreen {
                     }
                 }
 
+                // Session start: match desktop - send as soon as we have session ID (after connect)
+                val sessionId = gameServer.getSessionId()
+                val lpId = try { gameServer.getLocalPlayerId() } catch (e: Exception) { null }
+                if (sessionId.isNotBlank() && lpId != null) {
+                    telemetryService.startSession(
+                        matchId = sessionId,
+                        gameMode = gameMode,
+                        playerId = lpId.name,
+                        deviceId = deviceId
+                    )
+                }
+
                 // Start game with retry logic (moved from Navigation)
                 var gameStarted = false
                 var retries = 0
@@ -138,6 +149,7 @@ object GameScreen {
             delay(config.gameStateRetryDelayMs)
 
             var consecutiveErrors = 0
+            var lastTelemetrySnapshotMs = 0L
 
             withContext(Dispatchers.IO) {
                 while (currentCoroutineContext().isActive) {
@@ -157,13 +169,27 @@ object GameScreen {
                                         isGameRunning = true
                                     }
 
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastTelemetrySnapshotMs >= TELEMETRY_SNAPSHOT_INTERVAL_MS) {
+                                        lastTelemetrySnapshotMs = now
+                                        val lpId = localPlayerId ?: PlayerId.Player1
+                                        val localPaddle = getPaddleForPlayer(lpId, currentState)
+                                        telemetryService.recordSnapshot(
+                                                collisionCount = currentState.ballCollisionCount,
+                                                latencyMs = 0L,
+                                                paddleY = localPaddle.y
+                                        )
+                                    }
+
                                     if (currentState.isGameOver) {
                                         isGameRunning = false
+
+                                        val lpId = localPlayerId ?: PlayerId.Player1
+                                        telemetryService.endSession(currentState, lpId)
 
                                         // Save match result to Room (only once)
                                         if (!matchSaved) {
                                             matchSaved = true
-                                            val lpId = localPlayerId ?: PlayerId.Player1
                                             val playerScore = getScoreForPlayer(lpId, currentState)
                                             val opponentScore = getOpponentScoreForPlayer(lpId, currentState)
                                             val won = playerScore >= GameConstants.WINNING_SCORE
@@ -222,6 +248,7 @@ object GameScreen {
                     Button(onClick = { showErrorDialog = false; onBackToMenu() }) {
                         Text(Constants.UI_ERROR_DIALOG_BUTTON)
                     }
+                }
             )
         }
 
@@ -280,50 +307,6 @@ object GameScreen {
             }
         }
 
-        LaunchedEffect(isGameRunning) {
-            if (isGameRunning && localPlayerId != null) {
-                telemetryService.startSession(
-                    matchId = gameState?.matchId ?: "",
-                    gameMode = gameMode,
-                    playerId = localPlayerId.name,
-                    deviceId = deviceId
-                )
-
-                while (isGameRunning) {
-                    try {
-                        val currentState = gameState
-                        if (currentState != null) {
-                            val localPaddle = getPaddleForPlayer(localPlayerId, currentState)
-                            val localPaddleHits =
-                                    when (localPlayerId) {
-                                        PlayerId.Player1 -> currentState.player1PaddleHits
-                                        PlayerId.Player2 -> currentState.player2PaddleHits
-                                    }
-
-                            val latencyMs = withContext(Dispatchers.IO) {
-                                gameServer.measureLatency()
-                                delay(TELEMETRY_LATENCY_WAIT_MS)
-                                gameServer.getLatencyMs()
-                            }
-
-                            telemetryService.recordSnapshot(
-                                    collisionCount = localPaddleHits,
-                                    latencyMs = latencyMs,
-                                    paddleY = localPaddle.y
-                            )
-
-                            if (currentState.isGameOver) {
-                                telemetryService.endSession(currentState, localPlayerId)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error recording telemetry snapshot", e)
-                    }
-                    delay(TELEMETRY_SNAPSHOT_INTERVAL_MS)
-                }
-            }
-        }
-
         DisposableEffect(Unit) {
             onDispose {
                 gameServer.disconnect()
@@ -367,6 +350,16 @@ object GameScreen {
                                 color = Color.White,
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold
+                        )
+                    }
+                    val displaySessionId =
+                            gameServer.getSessionId().ifBlank { gameState!!.matchId }
+                    if (displaySessionId.isNotBlank()) {
+                        Text(
+                                text = "Session: $displaySessionId",
+                                color = Color.Gray,
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                         )
                     }
 

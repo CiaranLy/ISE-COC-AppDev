@@ -22,6 +22,7 @@ data class Config(
         val playerClientStartRetryDelayMs: Long = 200L,
         val matchmakingGameServerPortRangeStart: Int =
                 Constants.MATCHMAKING_GAME_SERVER_PORT_RANGE_START,
+        val telemetryHost: String = "10.0.2.2",
         val telemetryPort: Int = 6790
 ) {
     companion object {
@@ -30,6 +31,7 @@ data class Config(
         private const val KEY_GAME_SERVER_PORT = "game_server_port"
         private const val KEY_MATCHMAKING_HOST = "matchmaking_host"
         private const val KEY_MATCHMAKING_PORT = "matchmaking_port"
+        private const val KEY_TELEMETRY_HOST = "telemetry_host"
 
         @Volatile
         var current: Config = Config()
@@ -48,7 +50,10 @@ data class Config(
                                     prefs.getString(KEY_MATCHMAKING_HOST, current.matchmakingHost)
                                             ?: current.matchmakingHost,
                             matchmakingPort =
-                                    prefs.getInt(KEY_MATCHMAKING_PORT, current.matchmakingPort)
+                                    prefs.getInt(KEY_MATCHMAKING_PORT, current.matchmakingPort),
+                            telemetryHost = 
+                                    prefs.getString(KEY_TELEMETRY_HOST, current.telemetryHost)
+                                            ?: current.telemetryHost
                     )
         }
 
@@ -60,6 +65,7 @@ data class Config(
                     .putInt(KEY_GAME_SERVER_PORT, config.gameServerPort)
                     .putString(KEY_MATCHMAKING_HOST, config.matchmakingHost)
                     .putInt(KEY_MATCHMAKING_PORT, config.matchmakingPort)
+                    .putString(KEY_TELEMETRY_HOST, config.telemetryHost)
                     .apply()
         }
     }

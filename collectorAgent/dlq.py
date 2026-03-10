@@ -8,10 +8,17 @@ Messages are moved to the DLQ if:
 """
 
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+
+try:
+    from log_config import get_logger
+    _logger = get_logger("DLQ")
+except ImportError:
+    _logger = None
 
 
 class DeadLetterQueue:
@@ -34,9 +41,22 @@ class DeadLetterQueue:
             self.messages = []
     
     def _save(self):
-        """Persist DLQ to file."""
-        with open(self.dlq_file, "w") as f:
-            json.dump(self.messages, f, indent=2, default=str)
+        """Persist DLQ to file. Atomic write to avoid corruption. Fails silently on disk errors."""
+        tmp_path = self.dlq_file.with_suffix(".tmp")
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(self.messages, f, indent=2, default=str)
+            os.replace(tmp_path, self.dlq_file)
+        except OSError as e:
+            if _logger:
+                _logger.error("DLQ save failed (disk full or permission error): %s", e)
+            else:
+                print(f"[DLQ] Save failed: {e}")
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
     
     def add(self, message: dict, reason: str):
         """Add a message to the DLQ."""
@@ -49,7 +69,10 @@ class DeadLetterQueue:
             }
             self.messages.append(dlq_entry)
             self._save()
-            print(f"[DLQ] Message added: {reason}")
+            if _logger:
+                _logger.info("DLQ message added: %s", reason)
+            else:
+                print(f"[DLQ] Message added: {reason}")
     
     def get_all(self) -> List[dict]:
         """Get all messages in the DLQ."""
@@ -75,7 +98,10 @@ class DeadLetterQueue:
         with self.lock:
             self.messages = []
             self._save()
-            print("[DLQ] Cleared all messages")
+            if _logger:
+                _logger.info("DLQ cleared")
+            else:
+                print("[DLQ] Cleared all messages")
     
     def retry_all(self) -> List[dict]:
         """Get all messages for retry and clear the DLQ."""
@@ -127,6 +153,13 @@ class PendingMessageTracker:
                 del self.pending[msg_id]
         
         return timed_out
+    
+    def drain_all(self) -> List[dict]:
+        """Get and remove all pending messages (for shutdown)."""
+        with self.lock:
+            messages = [data["message"] for data in self.pending.values()]
+            self.pending.clear()
+        return messages
     
     def count(self) -> int:
         """Get the number of pending messages."""

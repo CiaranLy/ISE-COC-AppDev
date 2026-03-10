@@ -113,7 +113,8 @@ class MatchmakingServer(
             return
         }
         activeGameServers.add(gameServer)
-        val ready = MatchmakingMessage.GameReady(host = advertisedHost, port = port)
+        val sessionId = gameServer.getSessionId()
+        val ready = MatchmakingMessage.GameReady(host = advertisedHost, port = port, sessionId = sessionId)
         pair.forEach {
             it.send(ready)
             it.close()

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, ChangeEvent } from 'react';
+import { useState, useEffect, useCallback, useMemo, ChangeEvent, useRef } from 'react';
 import GraphCard from './GraphCard';
 import { fetchGraphs } from '../services/api';
 import { Graph } from '../types';
@@ -16,6 +16,10 @@ function Dashboard() {
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [refreshInterval, setRefreshInterval] = useState(DEFAULT_REFRESH_INTERVAL_SECONDS);
     const [hasMoreSessions, setHasMoreSessions] = useState(true);
+    const [isBlockingLoad, setIsBlockingLoad] = useState(false);
+    const blockingStartRef = useRef<number | null>(null);
+    const previousOverflowRef = useRef<string | null>(null);
+    const desiredSessionCountRef = useRef<number>(3);
 
     const countUniqueSessions = (items: Graph[]): number => {
         const seen = new Set<string>();
@@ -27,14 +31,28 @@ function Dashboard() {
 
     const loadGraphs = useCallback(async () => {
         try {
-            // Manual/auto refresh: always reload from the first page of sessions
-            const data = await fetchGraphs(0, SESSIONS_PER_PAGE);
+            const desiredSessionCount = Math.max(desiredSessionCountRef.current || 0, SESSIONS_PER_PAGE);
+
+            const data = await fetchGraphs(0, desiredSessionCount);
             setGraphs(data);
-            setHasMoreSessions(countUniqueSessions(data) === SESSIONS_PER_PAGE);
+
+            const loadedSessions = countUniqueSessions(data);
+            desiredSessionCountRef.current = loadedSessions;
+
+            setHasMoreSessions(loadedSessions >= desiredSessionCount);
             setLastUpdated(new Date());
             setError(null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load data');
+            if (err instanceof Error && err.message.includes('No graphs available for this page')) {
+                // Backend returns 404 when there are no graphs for this page.
+                // For the main load, treat this as "no data" instead of a hard error.
+                setGraphs([]);
+                desiredSessionCountRef.current = 0;
+                setHasMoreSessions(false);
+                setError(null);
+            } else {
+                setError(err instanceof Error ? err.message : 'Failed to load data');
+            }
         } finally {
             setLoading(false);
         }
@@ -43,6 +61,8 @@ function Dashboard() {
     const loadMoreSessions = useCallback(async () => {
         if (loadingMore || !hasMoreSessions) return;
 
+        setIsBlockingLoad(true);
+        blockingStartRef.current = Date.now();
         setLoadingMore(true);
         try {
             const currentSessionCount = countUniqueSessions(graphs);
@@ -61,15 +81,37 @@ function Dashboard() {
                 setGraphs(merged);
 
                 const newSessionCount = countUniqueSessions(merged);
+                desiredSessionCountRef.current = newSessionCount;
                 if (newSessionCount < nextOffset + SESSIONS_PER_PAGE) {
                     setHasMoreSessions(false);
                 }
             }
             setError(null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load more sessions');
+            if (err instanceof Error && err.message.includes('No graphs available for this page')) {
+                // This means we've paged past the available sessions; stop trying to load more.
+                setHasMoreSessions(false);
+                // Do not show an error banner for this expected condition.
+                setError(null);
+            } else {
+                setError(err instanceof Error ? err.message : 'Failed to load more sessions');
+            }
         } finally {
             setLoadingMore(false);
+            const MIN_BLOCK_MS = 2000;
+            const startedAt = blockingStartRef.current ?? 0;
+            const elapsed = startedAt ? Date.now() - startedAt : MIN_BLOCK_MS;
+            const remaining = Math.max(MIN_BLOCK_MS - elapsed, 0);
+
+            if (remaining === 0) {
+                setIsBlockingLoad(false);
+                blockingStartRef.current = null;
+            } else {
+                window.setTimeout(() => {
+                    setIsBlockingLoad(false);
+                    blockingStartRef.current = null;
+                }, remaining);
+            }
         }
     }, [graphs, hasMoreSessions, loadingMore]);
 
@@ -89,6 +131,18 @@ function Dashboard() {
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, [hasMoreSessions, loadingMore, loadMoreSessions]);
+
+    useEffect(() => {
+        if (isBlockingLoad) {
+            if (previousOverflowRef.current === null) {
+                previousOverflowRef.current = document.body.style.overflow || '';
+            }
+            document.body.style.overflow = 'hidden';
+        } else if (previousOverflowRef.current !== null) {
+            document.body.style.overflow = previousOverflowRef.current;
+            previousOverflowRef.current = null;
+        }
+    }, [isBlockingLoad]);
 
     useEffect(() => {
         if (refreshInterval > 0) {
@@ -238,6 +292,29 @@ function Dashboard() {
                                     )}
                                 </div>
                             ))}
+
+                            <div className="pagination-status">
+                                {loadingMore && (
+                                    <div className="loading-more">
+                                        <div className="spinner" />
+                                        <span>Loading more sessions...</span>
+                                    </div>
+                                )}
+                                {!loadingMore && hasMoreSessions && (
+                                    <button
+                                        type="button"
+                                        className="load-more-button"
+                                        onClick={loadMoreSessions}
+                                    >
+                                        Load more sessions
+                                    </button>
+                                )}
+                                {!loadingMore && !hasMoreSessions && (
+                                    <div className="no-more-sessions">
+                                        <span>All sessions loaded.</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -246,6 +323,18 @@ function Dashboard() {
             <footer className="dashboard-footer">
                 <p>🏓 Pong Analytics • Game data updates in real-time</p>
             </footer>
+
+            {isBlockingLoad && (
+                <div className="session-loading-modal">
+                    <div className="session-loading-dialog">
+                        <h2 className="session-loading-title">Session loading</h2>
+                        <div className="session-loading-bar">
+                            <div className="session-loading-bar-fill" />
+                        </div>
+                        <p className="session-loading-text">Please wait while we load more sessions.</p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

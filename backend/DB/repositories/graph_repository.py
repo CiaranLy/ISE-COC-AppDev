@@ -6,7 +6,6 @@ from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 
 from DB.models.graph import Graph
-from DB.models.data import Data
 from DB.repositories.base import AsyncRepository
 
 
@@ -45,31 +44,39 @@ class GraphRepository(AsyncRepository[Graph]):
         session_limit: int,
     ) -> List[Graph]:
         """
-        Get graphs for a window of sessions, ordered by most recently updated session.
+        Get graphs for a window of sessions, ordered by when the graph was created.
 
         A "session" here is defined by Graph.session_id. We determine recency by the
-        latest Data.timestamp_utc within each session across all graphs.
+        latest Graph.time_created within each session across all graphs.
         """
-        # First, find the window of session_ids ordered by latest data timestamp (newest first)
         session_subquery = (
             select(
                 Graph.session_id,
-                func.max(Data.timestamp_utc).label("last_ts"),
+                func.max(Graph.time_created).label("last_ts"),
             )
-            .join(Data, Data.graph_id == Graph.id)
             .group_by(Graph.session_id)
-            .order_by(func.max(Data.timestamp_utc).desc())
+            .order_by(func.max(Graph.time_created).desc())
             .offset(session_offset)
             .limit(session_limit)
             .subquery()
         )
 
-        # Then, fetch all graphs that belong to those sessions, with eager-loaded relations
         query = (
             select(Graph)
             .join(session_subquery, Graph.session_id == session_subquery.c.session_id)
             .options(selectinload(Graph.data_points), selectinload(Graph.collector))
             .order_by(session_subquery.c.last_ts.desc(), Graph.collector_id, Graph.unit)
+        )
+        result = await self.async_session.execute(query)
+        return list(result.scalars().all())
+
+    async def get_by_session_id(self, session_id: str) -> List[Graph]:
+        """Get all graphs for a specific session_id, newest graphs first."""
+        query = (
+            select(Graph)
+            .where(Graph.session_id == session_id)
+            .options(selectinload(Graph.data_points), selectinload(Graph.collector))
+            .order_by(Graph.time_created.desc(), Graph.collector_id, Graph.unit)
         )
         result = await self.async_session.execute(query)
         return list(result.scalars().all())

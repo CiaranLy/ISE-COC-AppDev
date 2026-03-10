@@ -134,7 +134,8 @@ async def get_all_graphs(
     """
     Get graphs for a window of sessions with their data points.
 
-    Sessions are ordered by most recent data point (newest session first).
+    Sessions are ordered by when their graphs were created (newest session first),
+    using the Graph.time_created field.
     Each graph is unique by (collector, unit, session_id).
     """
     graph_repo = GraphRepository(session)
@@ -146,6 +147,40 @@ async def get_all_graphs(
     if not graphs:
         # Use 404 to indicate that we've paged past the available sessions
         raise HTTPException(status_code=404, detail="No graphs available for this page.")
+
+    return [
+        GraphWithDataResponse(
+            id=graph.id,
+            collector_id=graph.collector_id,
+            collector_name=graph.collector.display_name,
+            unit=graph.unit,
+            session_id=graph.session_id,
+            max_value=graph.max_value,
+            data_points=[
+                SimpleDataPoint(
+                    timestamp=point.timestamp_utc.timestamp(),
+                    value=point.content
+                )
+                for point in sorted(graph.data_points, key=lambda p: p.timestamp_utc)
+            ],
+        )
+        for graph in graphs
+    ]
+
+
+@v1.get("/graphs/by-session", response_model=List[GraphWithDataResponse])
+async def get_graphs_by_session(
+    session_id: str = Query(..., description="Exact session_id to filter graphs by"),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """
+    Get all graphs (and their data points) for a specific session_id.
+    """
+    graph_repo = GraphRepository(session)
+    graphs = await graph_repo.get_by_session_id(session_id)
+
+    if not graphs:
+        raise HTTPException(status_code=404, detail="No graphs found for this session_id.")
 
     return [
         GraphWithDataResponse(

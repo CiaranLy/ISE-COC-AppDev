@@ -107,85 +107,162 @@ function GraphCard({ graph, colorIndex }: GraphCardProps) {
         updateThreshold(graph.id, parsed).catch(() => {});
     }
 
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    const handleOpenModal = () => {
+        if (!chartData.length) return;
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+    };
+
     return (
-        <div className="graph-card">
-            <div className="graph-header">
-                <div className="graph-title-section">
-                    <h3 className="graph-title">
-                        {graph.collector_name} <span className="graph-title-session">• {graph.session_id}</span>
-                    </h3>
-                    <span className="graph-unit">{graph.unit}</span>
+        <>
+            <div className="graph-card">
+                <div className="graph-header">
+                    <div className="graph-title-section">
+                        <h3 className="graph-title">
+                            {graph.collector_name} <span className="graph-title-session">• {graph.session_id}</span>
+                        </h3>
+                        <span className="graph-unit">{graph.unit}</span>
+                    </div>
+                    {(latestValue !== null && latestValue !== undefined) && (
+                        <div className="graph-current-value" style={{ color: isBreaching ? '#ef4444' : chartColor }}>
+                            {Number(latestValue).toFixed(2)}
+                        </div>
+                    )}
                 </div>
-                {(latestValue !== null && latestValue !== undefined) && (
-                    <div className="graph-current-value" style={{ color: isBreaching ? '#ef4444' : chartColor }}>
-                        {Number(latestValue).toFixed(2)}
-                    </div>
-                )}
+
+                <button
+                    type="button"
+                    className="graph-chart-container graph-chart-clickable"
+                    onClick={handleOpenModal}
+                    disabled={!chartData.length}
+                >
+                    {chartData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={220}>
+                            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id={`gradient-${graph.id}`} x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor={chartColor} stopOpacity={0.4} />
+                                        <stop offset="95%" stopColor={chartColor} stopOpacity={0.02} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                                <XAxis
+                                    dataKey="timestamp"
+                                    stroke="rgba(255,255,255,0.3)"
+                                    fontSize={11}
+                                    tickLine={false}
+                                />
+                                <YAxis
+                                    stroke="rgba(255,255,255,0.3)"
+                                    fontSize={11}
+                                    tickLine={false}
+                                    axisLine={false}
+                                />
+                                <Tooltip content={<CustomTooltip unit={graph.unit} color={chartColor} active={false} />} />
+                                <Area
+                                    type="monotone"
+                                    dataKey="value"
+                                    stroke={chartColor}
+                                    strokeWidth={2.5}
+                                    fill={`url(#gradient-${graph.id})`}
+                                    dot={false}
+                                    activeDot={{ r: 5, fill: chartColor, stroke: '#fff', strokeWidth: 2 }}
+                                />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="graph-no-data">
+                            <p>🏓 Waiting for data...</p>
+                        </div>
+                    )}
+                </button>
+
+                <div className="graph-footer">
+                    <span className="graph-data-count">
+                        {chartData.length} point{chartData.length !== 1 ? 's' : ''} recorded
+                    </span>
+                    {isLatencyGraph && (
+                        <div className="graph-max-ping">
+                            <label className="graph-max-ping-label">Max ping (ms):</label>
+                            <input
+                                className="graph-max-ping-input"
+                                type="number"
+                                min="0"
+                                placeholder="—"
+                                value={maxPingInput}
+                                onChange={e => setMaxPingInput(e.target.value)}
+                                onBlur={handleMaxPingCommit}
+                                onKeyDown={e => { if (e.key === 'Enter') handleMaxPingCommit(); }}
+                            />
+                        </div>
+                    )}
+                </div>
             </div>
 
-            <div className="graph-chart-container">
-                {chartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={220}>
-                        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <defs>
-                                <linearGradient id={`gradient-${graph.id}`} x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={chartColor} stopOpacity={0.4} />
-                                    <stop offset="95%" stopColor={chartColor} stopOpacity={0.02} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                            <XAxis
-                                dataKey="timestamp"
-                                stroke="rgba(255,255,255,0.3)"
-                                fontSize={11}
-                                tickLine={false}
-                            />
-                            <YAxis
-                                stroke="rgba(255,255,255,0.3)"
-                                fontSize={11}
-                                tickLine={false}
-                                axisLine={false}
-                            />
-                            <Tooltip content={<CustomTooltip unit={graph.unit} color={chartColor} active={false} />} />
-                            <Area
-                                type="monotone"
-                                dataKey="value"
-                                stroke={chartColor}
-                                strokeWidth={2.5}
-                                fill={`url(#gradient-${graph.id})`}
-                                dot={false}
-                                activeDot={{ r: 5, fill: chartColor, stroke: '#fff', strokeWidth: 2 }}
-                            />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                ) : (
-                    <div className="graph-no-data">
-                        <p>🏓 Waiting for data...</p>
+            {isModalOpen && (
+                <div className="graph-modal-overlay" onClick={handleCloseModal}>
+                    <div
+                        className="graph-modal-content"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="graph-modal-header">
+                            <div className="graph-modal-title-group">
+                                <h2 className="graph-modal-title">{graph.collector_name}</h2>
+                                <span className="graph-modal-session">Session: {graph.session_id}</span>
+                                <span className="graph-modal-unit">{graph.unit}</span>
+                            </div>
+                            <button
+                                type="button"
+                                className="graph-modal-close"
+                                onClick={handleCloseModal}
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <div className="graph-modal-body">
+                            <ResponsiveContainer width="100%" height={400}>
+                                <AreaChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id={`gradient-modal-${graph.id}`} x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor={chartColor} stopOpacity={0.5} />
+                                            <stop offset="95%" stopColor={chartColor} stopOpacity={0.05} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" />
+                                    <XAxis
+                                        dataKey="timestamp"
+                                        stroke="rgba(255,255,255,0.6)"
+                                        fontSize={12}
+                                        tickLine={false}
+                                    />
+                                    <YAxis
+                                        stroke="rgba(255,255,255,0.6)"
+                                        fontSize={12}
+                                        tickLine={false}
+                                        axisLine={false}
+                                    />
+                                    <Tooltip content={<CustomTooltip unit={graph.unit} color={chartColor} active={false} />} />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="value"
+                                        stroke={chartColor}
+                                        strokeWidth={3}
+                                        fill={`url(#gradient-modal-${graph.id})`}
+                                        dot={false}
+                                        activeDot={{ r: 6, fill: chartColor, stroke: '#fff', strokeWidth: 2 }}
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
-                )}
-            </div>
-
-            <div className="graph-footer">
-                <span className="graph-data-count">
-                    {chartData.length} point{chartData.length !== 1 ? 's' : ''} recorded
-                </span>
-                {isLatencyGraph && (
-                    <div className="graph-max-ping">
-                        <label className="graph-max-ping-label">Max ping (ms):</label>
-                        <input
-                            className="graph-max-ping-input"
-                            type="number"
-                            min="0"
-                            placeholder="—"
-                            value={maxPingInput}
-                            onChange={e => setMaxPingInput(e.target.value)}
-                            onBlur={handleMaxPingCommit}
-                            onKeyDown={e => { if (e.key === 'Enter') handleMaxPingCommit(); }}
-                        />
-                    </div>
-                )}
-            </div>
-        </div>
+                </div>
+            )}
+        </>
     );
 }
 

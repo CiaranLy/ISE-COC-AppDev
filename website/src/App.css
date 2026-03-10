@@ -699,6 +699,92 @@ body {
 }
 
 /* ============================================
+   Graph Fullscreen Modal
+   ============================================ */
+
+.graph-chart-clickable {
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+}
+
+.graph-chart-clickable:disabled {
+  cursor: default;
+}
+
+.graph-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 250;
+}
+
+.graph-modal-content {
+  background: linear-gradient(145deg, rgba(17, 24, 39, 0.98), rgba(10, 14, 26, 0.98));
+  border-radius: 1.25rem;
+  padding: 1.5rem 1.75rem 1.75rem;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-color);
+  max-width: 1200px;
+  width: min(96%, 1200px);
+}
+
+.graph-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.graph-modal-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.graph-modal-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.graph-modal-session {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-family: 'Inter', monospace;
+}
+
+.graph-modal-unit {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.graph-modal-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.graph-modal-close:hover {
+  color: var(--text-primary);
+}
+
+.graph-modal-body {
+  height: 420px;
+}
+
+/* ============================================
    Responsive Design
    ============================================ */
 

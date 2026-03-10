@@ -13,7 +13,9 @@ Usage:
 import argparse
 import asyncio
 import json
+import signal
 import sys
+import time
 from datetime import datetime, timezone
 
 import websockets
@@ -53,6 +55,8 @@ UNIT_FINAL_SCORE_PLAYER2 = "final_score_player2"
 SESSION_START_MARKER_VALUE = 1.0
 DEFAULT_DURATION_MS = 0
 
+SNAPSHOT_UNITS = {UNIT_LATENCY_MS, UNIT_PADDLE_Y, UNIT_COLLISION_COUNT}
+
 
 class DesktopCollector:
 
@@ -60,8 +64,27 @@ class DesktopCollector:
         self.collector_name = COLLECTOR_NAME
         self.ws_host = ws_host or app_config.get("ws_host", "localhost")
         self.ws_port = ws_port or app_config.get("desktop_collector_ws_port", DEFAULT_WS_PORT)
+        queue_port = app_config.get("queue_port", 15555)
+        if self.ws_port == queue_port:
+            raise ValueError(
+                f"Game telemetry port ({self.ws_port}) cannot equal queue port ({queue_port}). "
+                f"Use --port to specify the game client port (e.g. 6790)."
+            )
         self.queue = QueueClient()
         self.running = True
+        self._last_snapshot_time: dict[str, float] = {}
+        self._snapshot_interval = app_config.get("snapshot_interval_seconds", 1.0)
+
+    def _should_forward_snapshots(self, data_points: list, session_id: str) -> bool:
+        """Return True if snapshot metrics should be forwarded (throttle check)."""
+        if not data_points or not all(dp.unit in SNAPSHOT_UNITS for dp in data_points):
+            return True
+        now = time.monotonic()
+        last = self._last_snapshot_time.get(session_id, 0)
+        if now - last >= self._snapshot_interval:
+            self._last_snapshot_time[session_id] = now
+            return True
+        return False
 
     def __enter__(self):
         self.queue.connect()
@@ -79,13 +102,16 @@ class DesktopCollector:
         raw = data.get(FIELD_TIMESTAMP)
         if raw:
             try:
-                return datetime.fromisoformat(raw)
+                return datetime.fromisoformat(raw.replace("Z", "+00:00"))
             except (ValueError, TypeError):
                 logger.warning("Unparseable timestamp: %s", raw)
         return datetime.now(timezone.utc)
 
-    def process_message(self, raw_message: str):
+    def process_message(self, raw_message):
+        """Process a telemetry message. Accepts str or bytes (decoded as UTF-8)."""
         try:
+            if isinstance(raw_message, bytes):
+                raw_message = raw_message.decode("utf-8")
             data = json.loads(raw_message)
             msg_type = data.get(FIELD_TYPE, MSG_TYPE_SNAPSHOT)
             timestamp = self._parse_timestamp(data)
@@ -95,57 +121,60 @@ class DesktopCollector:
                 logger.error("Missing session_id in %s message, dropping", msg_type)
                 return []
 
+            def create_dp(content: float, unit: str) -> DataPoint:
+                return DataPoint(
+                    collector_name=self.collector_name,
+                    content=content,
+                    unit=unit,
+                    timestamp=timestamp,
+                    session_id=session_id,
+                )
+
             if msg_type == MSG_TYPE_SESSION_START:
-                return [self._create_dp(SESSION_START_MARKER_VALUE, UNIT_SESSION_START, timestamp, session_id)]
+                return [create_dp(SESSION_START_MARKER_VALUE, UNIT_SESSION_START)]
 
             if msg_type == MSG_TYPE_SESSION_END:
-                return self._extract_session_end_metrics(data, timestamp, session_id)
+                metrics = []
+                try:
+                    metrics.append(create_dp(
+                        float(data.get(FIELD_DURATION_MS, DEFAULT_DURATION_MS)),
+                        UNIT_SESSION_DURATION_MS,
+                    ))
+                except (TypeError, ValueError):
+                    logger.warning("Invalid duration_ms: %r", data.get(FIELD_DURATION_MS))
+                for field, unit in [
+                    (FIELD_FINAL_SCORE_PLAYER1, UNIT_FINAL_SCORE_PLAYER1),
+                    (FIELD_FINAL_SCORE_PLAYER2, UNIT_FINAL_SCORE_PLAYER2),
+                ]:
+                    if field in data:
+                        try:
+                            metrics.append(create_dp(float(data[field]), unit))
+                        except (TypeError, ValueError):
+                            logger.warning("Invalid value for %s: %r", field, data[field])
+                return metrics
 
-            return self._extract_snapshot_metrics(data, timestamp, session_id)
-        except json.JSONDecodeError as e:
-            logger.warning("Invalid JSON: %s", e)
+            return self._extract_snapshot_metrics(data, create_dp)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            logger.warning("Invalid message (JSON/UTF-8): %s", e)
             return []
 
-    def _extract_snapshot_metrics(self, data: dict, timestamp: datetime, session_id: str):
+    def _extract_snapshot_metrics(self, data: dict, create_dp) -> list:
         metrics = []
-        snapshot_fields = [
+        for field, unit in [
             (FIELD_LATENCY_MS, UNIT_LATENCY_MS),
             (FIELD_PADDLE_Y, UNIT_PADDLE_Y),
             (FIELD_COLLISION_COUNT, UNIT_COLLISION_COUNT),
-        ]
-        for field, unit in snapshot_fields:
-            if field in data:
-                metrics.append(self._create_dp(float(data[field]), unit, timestamp, session_id))
-        return metrics
-
-    def _extract_session_end_metrics(self, data: dict, timestamp: datetime, session_id: str):
-        metrics = [
-            self._create_dp(
-                float(data.get(FIELD_DURATION_MS, DEFAULT_DURATION_MS)),
-                UNIT_SESSION_DURATION_MS,
-                timestamp,
-                session_id,
-            )
-        ]
-        for field, unit in [
-            (FIELD_FINAL_SCORE_PLAYER1, UNIT_FINAL_SCORE_PLAYER1),
-            (FIELD_FINAL_SCORE_PLAYER2, UNIT_FINAL_SCORE_PLAYER2),
         ]:
             if field in data:
-                metrics.append(self._create_dp(float(data[field]), unit, timestamp, session_id))
+                try:
+                    metrics.append(create_dp(float(data[field]), unit))
+                except (TypeError, ValueError):
+                    logger.warning("Invalid numeric value for %s: %r", field, data[field])
         return metrics
-
-    def _create_dp(self, content: float, unit: str, timestamp: datetime, session_id: str) -> DataPoint:
-        return DataPoint(
-            collector_name=self.collector_name,
-            content=content,
-            unit=unit,
-            timestamp=timestamp,
-            session_id=session_id,
-        )
 
     async def run(self):
         logger.info("Starting %s collector...", self.collector_name)
+        recv_timeout = 1.0
 
         while self.running:
             server_url = self._get_server_url()
@@ -153,19 +182,31 @@ class DesktopCollector:
             try:
                 async with websockets.connect(server_url) as websocket:
                     logger.info("Connected to game client")
-                    async for message in websocket:
+                    while self.running:
+                        try:
+                            message = await asyncio.wait_for(websocket.recv(), timeout=recv_timeout)
+                        except asyncio.TimeoutError:
+                            continue
                         data_points = self.process_message(message)
+                        if not data_points:
+                            continue
+                        session_id = data_points[0].session_id
+                        if not self._should_forward_snapshots(data_points, session_id):
+                            continue
                         for dp in data_points:
                             self.queue.send(dp.to_dict())
+                        logger.debug("Forwarded %d points", len(data_points))
 
-                        if data_points:
-                            logger.debug("Forwarded %d points", len(data_points))
-
-            except (websockets.ConnectionClosed, OSError) as e:
+            except (websockets.ConnectionClosed, OSError, QueueNotRunningError) as e:
+                if not self.running:
+                    break
                 delay = app_config.get("reconnect_delay_seconds", 5.0)
                 logger.warning("Connection error: %s. Retrying in %ss...", e, delay)
-                await asyncio.sleep(delay)
-            except KeyboardInterrupt:
+                for _ in range(int(delay * 10)):
+                    if not self.running:
+                        break
+                    await asyncio.sleep(0.1)
+            except (KeyboardInterrupt, asyncio.CancelledError):
                 self.running = False
                 break
 
@@ -188,6 +229,14 @@ def main():
     args = parser.parse_args()
 
     collector = DesktopCollector(ws_host=args.host, ws_port=args.port)
+
+    def shutdown_handler(signum=None, frame=None):
+        collector.running = False
+
+    signal.signal(signal.SIGINT, shutdown_handler)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, shutdown_handler)
+
     try:
         with collector:
             asyncio.run(collector.run())
@@ -195,8 +244,12 @@ def main():
         logger.error("%s", e)
         logger.error("Please start the Queue Manager first: python queue_manager.py")
         return 1
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         pass
+    finally:
+        collector.running = False
+        collector.queue.close()
+        logger.info("Desktop collector exited")
     return 0
 
 

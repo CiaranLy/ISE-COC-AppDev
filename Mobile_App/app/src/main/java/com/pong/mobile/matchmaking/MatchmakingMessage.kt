@@ -20,7 +20,8 @@ sealed class MatchmakingMessage {
     data class GameReady(
         val messageType: String = "GAME_READY",
         val host: String,
-        val port: Int
+        val port: Int,
+        val sessionId: String = ""
     ) : MatchmakingMessage()
 
     @Serializable

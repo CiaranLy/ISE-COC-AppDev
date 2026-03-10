@@ -31,6 +31,7 @@ class NetworkGameServer(
     private val gameHeight: Float
 ) {
     private val matchId: String = UUID.randomUUID().toString()
+    fun getSessionId(): String = matchId
     private var webSocketServer: GameWebSocketServer? = null
     private val clients = ConcurrentHashMap<PlayerId, ClientConnection>()
     private val messageQueues = ConcurrentHashMap<WebSocket, BlockingQueue<String>>()

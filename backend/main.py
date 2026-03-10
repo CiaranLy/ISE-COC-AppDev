@@ -1,3 +1,4 @@
+import asyncio
 from collections import deque
 from contextlib import asynccontextmanager
 from typing import List
@@ -5,6 +6,7 @@ from typing import List
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from schemas import AlertCreate, AlertResponse, DataIngest, DataIngestResponse, ErrorResponse, GraphWithDataResponse, SimpleDataPoint, ThresholdUpdate
@@ -75,7 +77,18 @@ async def aggregate_data(
     collector = await collector_repo.find_by_display_name(data.collector_name)
 
     if not collector:
-        collector = await collector_repo.create(display_name=data.collector_name)
+        try:
+            collector = await collector_repo.create(display_name=data.collector_name)
+        except IntegrityError:
+            await session.rollback()
+            # Concurrent request may have created it; retry find with backoff
+            for attempt in range(5):
+                await asyncio.sleep(0.05 * (attempt + 1))
+                collector = await collector_repo.find_by_display_name(data.collector_name)
+                if collector:
+                    break
+            if not collector:
+                raise
 
     graph_repo = GraphRepository(session)
     graph = await graph_repo.find_by_collector_unit_and_session(collector.id, data.unit, data.session_id)

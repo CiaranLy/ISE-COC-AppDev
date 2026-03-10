@@ -88,3 +88,11 @@ class AlertResponse(BaseModel):
     threshold: float
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CollectorResponse(BaseModel):
+    """Response schema for collectors."""
+    id: int
+    display_name: str
+
+    model_config = ConfigDict(from_attributes=True)

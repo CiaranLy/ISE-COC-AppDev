@@ -1,7 +1,7 @@
 import asyncio
 from collections import deque
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +9,17 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from schemas import AlertCreate, AlertResponse, DataIngest, DataIngestResponse, ErrorResponse, GraphWithDataResponse, SimpleDataPoint, ThresholdUpdate
+from schemas import (
+    AlertCreate,
+    AlertResponse,
+    CollectorResponse,
+    DataIngest,
+    DataIngestResponse,
+    ErrorResponse,
+    GraphWithDataResponse,
+    SimpleDataPoint,
+    ThresholdUpdate,
+)
 from config import API_TITLE, API_VERSION, CORS_ORIGINS, UVICORN_HOST, UVICORN_PORT, UVICORN_WORKERS
 from DB.database import get_async_session, init_db
 from DB.repositories import AlertRepository, CollectorRepository, DataRepository, GraphRepository
@@ -138,23 +148,50 @@ async def aggregate_data(
 
 
 
+@v1.get("/collectors", response_model=List[CollectorResponse])
+async def get_all_collectors(
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Get all registered collectors."""
+    collector_repo = CollectorRepository(session)
+    # Using the inherited get_all from AsyncRepository
+    collectors = await collector_repo.get_all()
+    return [
+        CollectorResponse(
+            id=c.id,
+            display_name=c.display_name,
+        )
+        for c in collectors
+    ]
+
+
 @v1.get("/graphs", response_model=List[GraphWithDataResponse])
 async def get_all_graphs(
     session: AsyncSession = Depends(get_async_session),
     session_offset: int = Query(0, ge=0),
     session_limit: int = Query(3, ge=1, le=100),
+    collector_name: Optional[str] = Query(None, description="Filter by collector name"),
 ):
     """
     Get graphs for a window of sessions with their data points.
 
-    Sessions are ordered by when their graphs were created (newest session first),
-    using the Graph.time_created field.
+    Sessions are ordered by when their graphs were created (newest session first).
     Each graph is unique by (collector, unit, session_id).
+    If collector_name is provided, only sessions containing that collector are returned.
     """
+    collector_id = None
+    if collector_name:
+        collector_repo = CollectorRepository(session)
+        collector = await collector_repo.find_by_display_name(collector_name)
+        if not collector:
+            raise HTTPException(status_code=404, detail=f"Collector '{collector_name}' not found.")
+        collector_id = collector.id
+
     graph_repo = GraphRepository(session)
     graphs = await graph_repo.get_sessions_with_data(
         session_offset=session_offset,
         session_limit=session_limit,
+        collector_id=collector_id,
     )
 
     if not graphs:

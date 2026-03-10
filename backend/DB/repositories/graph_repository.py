@@ -32,19 +32,28 @@ class GraphRepository(AsyncRepository[Graph]):
         self,
         session_offset: int,
         session_limit: int,
+        collector_id: Optional[int] = None,
     ) -> List[Graph]:
         """
         Get graphs for a window of sessions, ordered by when the graph was created.
 
         A "session" here is defined by Graph.session_id. We determine recency by the
         latest Graph.time_created within each session across all graphs.
+        If collector_id is provided, only sessions containing that collector are returned.
         """
-        session_subquery = (
+        session_subquery_base = (
             select(
                 Graph.session_id,
                 func.max(Graph.time_created).label("last_ts"),
             )
             .group_by(Graph.session_id)
+        )
+
+        if collector_id is not None:
+            session_subquery_base = session_subquery_base.where(Graph.collector_id == collector_id)
+
+        session_subquery = (
+            session_subquery_base
             .order_by(func.max(Graph.time_created).desc())
             .offset(session_offset)
             .limit(session_limit)
@@ -57,6 +66,10 @@ class GraphRepository(AsyncRepository[Graph]):
             .options(selectinload(Graph.data_points), selectinload(Graph.collector))
             .order_by(session_subquery.c.last_ts.desc(), Graph.collector_id, Graph.unit)
         )
+
+        if collector_id is not None:
+            query = query.where(Graph.collector_id == collector_id)
+
         result = await self.async_session.execute(query)
         return list(result.scalars().all())
 

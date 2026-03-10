@@ -7,6 +7,7 @@ from schemas.schema import (
     GraphWithDataResponse,
     SimpleDataPoint,
     ThresholdUpdate,
+    CollectorResponse,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "GraphWithDataResponse",
     "SimpleDataPoint",
     "ThresholdUpdate",
+    "CollectorResponse",
 ]

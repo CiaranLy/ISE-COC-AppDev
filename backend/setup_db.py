@@ -2,7 +2,7 @@
 
 import asyncio
 from DB.database import async_engine, init_db
-from sqlalchemy import text
+from DB.models.base import Base
 from log_config import get_logger
 
 logger = get_logger("setup_db")
@@ -13,8 +13,7 @@ async def setup():
     await init_db()
 
     async with async_engine.connect() as conn:
-        result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
-        tables = [r[0] for r in result.fetchall()]
+        tables = list(Base.metadata.tables.keys())
         logger.info("Created tables: %s", ", ".join(tables))
 
     logger.info("Start FastAPI server: uvicorn main:app --reload")

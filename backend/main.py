@@ -210,7 +210,9 @@ async def set_graph_threshold(
 ):
     """Set or clear the max_value threshold for a graph."""
     graph_repo = GraphRepository(session)
-    await graph_repo.update_max_value(graph_id, body.max_value)
+    updated = await graph_repo.update_max_value(graph_id, body.max_value)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Graph not found.")
     logger.info("Updated threshold for graph %d: %s", graph_id, body.max_value)
 
 
@@ -267,7 +269,9 @@ async def acknowledge_alert(
 ):
     """Mark an alert as acknowledged."""
     alert_repo = AlertRepository(session)
-    await alert_repo.acknowledge(alert_id)
+    acknowledged = await alert_repo.acknowledge(alert_id)
+    if not acknowledged:
+        raise HTTPException(status_code=404, detail="Alert not found.")
 
 
 app.include_router(v1)

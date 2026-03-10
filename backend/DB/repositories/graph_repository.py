@@ -28,16 +28,6 @@ class GraphRepository(AsyncRepository[Graph]):
         result = await self.async_session.execute(query)
         return result.rowcount > 0
 
-    async def get_all_with_data(self, limit: int = 1000) -> List[Graph]:
-        """Get all graphs with their data points and collector eagerly loaded."""
-        query = (
-            select(Graph)
-            .options(selectinload(Graph.data_points), selectinload(Graph.collector))
-            .limit(limit)
-        )
-        result = await self.async_session.execute(query)
-        return list(result.scalars().all())
-
     async def get_sessions_with_data(
         self,
         session_offset: int,

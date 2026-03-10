@@ -8,7 +8,12 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     # Database
-    database_url: str  # Set via DATABASE_URL environment variable
+    # Uses DATABASE_URL if set; otherwise falls back to a local Postgres database.
+    database_url: str = Field(
+        # database name "isecocdb". Override via DATABASE_URL in prod.
+        "postgresql+asyncpg:///isecocdb",
+        description="Async DB URL. Override via DATABASE_URL",
+    )
     db_echo: bool = Field(False)
 
     # API

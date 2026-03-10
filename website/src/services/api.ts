@@ -9,11 +9,15 @@ import { API_BASE_URL } from '../config';
 export async function fetchGraphs(
     sessionOffset = 0,
     sessionLimit = 3,
+    collectorName?: string,
 ): Promise<Graph[]> {
     const params = new URLSearchParams({
         session_offset: String(sessionOffset),
         session_limit: String(sessionLimit),
     });
+    if (collectorName) {
+        params.append('collector_name', collectorName);
+    }
     const response = await fetch(`${API_BASE_URL}/graphs?${params.toString()}`);
 
     if (!response.ok) {
@@ -56,4 +60,15 @@ export async function createAlert(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ collector_name: collectorName, unit, value, threshold }),
     });
+}
+
+/**
+ * Fetch all registered collectors from the backend.
+ */
+export async function fetchCollectors(): Promise<{ id: number; display_name: string }[]> {
+    const response = await fetch(`${API_BASE_URL}/collectors`);
+    if (!response.ok) {
+        throw new Error('Failed to fetch collectors');
+    }
+    return response.json();
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, ChangeEvent, useRef } from 'react';
 import GraphCard from './GraphCard';
-import { fetchGraphs } from '../services/api';
+import { fetchGraphs, fetchCollectors } from '../services/api';
 import { Graph } from '../types';
 import { DEFAULT_REFRESH_INTERVAL_SECONDS } from '../config';
 
@@ -17,6 +17,9 @@ function Dashboard() {
     const [refreshInterval, setRefreshInterval] = useState(DEFAULT_REFRESH_INTERVAL_SECONDS);
     const [hasMoreSessions, setHasMoreSessions] = useState(true);
     const [isBlockingLoad, setIsBlockingLoad] = useState(false);
+    const [activeCollector, setActiveCollector] = useState<string | null>(null);
+    const [allCollectors, setAllCollectors] = useState<{ name: string; id: number }[]>([]);
+
     const blockingStartRef = useRef<number | null>(null);
     const previousOverflowRef = useRef<string | null>(null);
     const desiredSessionCountRef = useRef<number>(3);
@@ -33,7 +36,7 @@ function Dashboard() {
         try {
             const desiredSessionCount = Math.max(desiredSessionCountRef.current || 0, SESSIONS_PER_PAGE);
 
-            const data = await fetchGraphs(0, desiredSessionCount);
+            const data = await fetchGraphs(0, desiredSessionCount, activeCollector || undefined);
             setGraphs(data);
 
             const loadedSessions = countUniqueSessions(data);
@@ -56,7 +59,7 @@ function Dashboard() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [activeCollector]);
 
     const loadMoreSessions = useCallback(async () => {
         if (loadingMore || !hasMoreSessions) return;
@@ -67,7 +70,7 @@ function Dashboard() {
         try {
             const currentSessionCount = countUniqueSessions(graphs);
             const nextOffset = currentSessionCount;
-            const data = await fetchGraphs(nextOffset, SESSIONS_PER_PAGE);
+            const data = await fetchGraphs(nextOffset, SESSIONS_PER_PAGE, activeCollector || undefined);
 
             if (!data.length) {
                 setHasMoreSessions(false);
@@ -101,7 +104,26 @@ function Dashboard() {
             setIsBlockingLoad(false);
             blockingStartRef.current = null;
         }
-    }, [graphs, hasMoreSessions, loadingMore]);
+    }, [graphs, hasMoreSessions, loadingMore, activeCollector]);
+
+    // Initial load for collectors
+    useEffect(() => {
+        const init = async () => {
+            try {
+                const collectors = await fetchCollectors();
+                if (collectors && collectors.length > 0) {
+                    const mapped = collectors.map(c => ({ name: c.display_name, id: c.id }));
+                    setAllCollectors(mapped);
+                    if (!activeCollector) {
+                        setActiveCollector(mapped[0].name);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch collectors:", err);
+            }
+        };
+        init();
+    }, []);
 
     useEffect(() => { loadGraphs(); }, [loadGraphs]);
 
@@ -139,32 +161,10 @@ function Dashboard() {
         }
     }, [refreshInterval, loadGraphs]);
 
-    const [activeCollector, setActiveCollector] = useState<string | null>(null);
-
-    // Unique collectors for tabs
-    const collectors = useMemo(() => {
-        const seen = new Set<string>();
-        const result: { name: string; id: number }[] = [];
-        graphs.forEach(g => {
-            if (!seen.has(g.collector_name)) {
-                seen.add(g.collector_name);
-                result.push({ name: g.collector_name, id: g.collector_id });
-            }
-        });
-        return result;
-    }, [graphs]);
-
-    useEffect(() => {
-        if (collectors.length > 0 && !activeCollector) {
-            setActiveCollector(collectors[0].name);
-        } else if (collectors.length > 0 && activeCollector && !collectors.find(c => c.name === activeCollector)) {
-            setActiveCollector(collectors[0].name);
-        }
-    }, [collectors, activeCollector]);
-
     // Active collector's graphs grouped by session
     const sessionsForActive = useMemo(() => {
-        const activeGraphs = graphs.filter(g => g.collector_name === activeCollector);
+        // Backend already filters by activeCollector, but double check here.
+        const activeGraphs = activeCollector ? graphs.filter(g => g.collector_name === activeCollector) : graphs;
         const sessionMap: Record<string, Graph[]> = {};
         activeGraphs.forEach(g => {
             if (!sessionMap[g.session_id]) sessionMap[g.session_id] = [];
@@ -175,6 +175,15 @@ function Dashboard() {
 
     const handleRefreshChange = (e: ChangeEvent<HTMLSelectElement>) => {
         setRefreshInterval(parseInt(e.target.value, 10));
+    };
+
+    const handleTabClick = (collectorName: string | null) => {
+        if (activeCollector !== collectorName) {
+            setLoading(true);
+            setGraphs([]);
+            desiredSessionCountRef.current = SESSIONS_PER_PAGE;
+            setActiveCollector(collectorName);
+        }
     };
 
     return (
@@ -245,11 +254,11 @@ function Dashboard() {
                 ) : (
                     <div className="dashboard-tabs-container">
                         <div className="dashboard-tabs">
-                            {collectors.map(collector => (
+                            {allCollectors.map(collector => (
                                 <button
-                                    key={collector.id}
+                                    key={collector.name}
                                     className={`tab-button ${activeCollector === collector.name ? 'active' : ''}`}
-                                    onClick={() => setActiveCollector(collector.name)}
+                                    onClick={() => handleTabClick(collector.name)}
                                 >
                                     <span className="collector-icon">🏓</span>
                                     {collector.name}
@@ -269,7 +278,6 @@ function Dashboard() {
                                             <GraphCard
                                                 key={graph.id}
                                                 graph={graph}
-                                                // Generate color index deterministically
                                                 colorIndex={i}
                                             />
                                         ))}

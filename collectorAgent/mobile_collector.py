@@ -8,8 +8,7 @@ import argparse
 import signal
 import sys
 import time
-import threading
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 import firebase_admin
 from firebase_admin import credentials, firestore

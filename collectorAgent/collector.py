@@ -10,6 +10,7 @@ import json
 import signal
 from typing import List, Optional
 
+import aiohttp
 import websockets
 
 from config_manager import config as app_config
@@ -18,6 +19,7 @@ from log_config import get_logger
 from queue_client import QueueClient, QueueNotRunningError
 
 STARTUP_BANNER_WIDTH = 60
+ALERT_POLL_INTERVAL_SECONDS = 2
 
 
 class Collector(abc.ABC):
@@ -121,6 +123,45 @@ class Collector(abc.ABC):
         self.logger.info("WebSocket:      %s:%s", self.ws_host, self.ws_port)
         self.logger.info("=" * STARTUP_BANNER_WIDTH)
 
+    async def _alert_poll_loop(self):
+        """Poll the backend for pending alerts and forward them to connected clients."""
+        api_base_url = app_config.get("api_base_url", "http://localhost:8000/api/v1")
+        pending_url = f"{api_base_url}/alerts/pending"
+        ack_url_template = f"{api_base_url}/alerts/{{alert_id}}/acknowledge"
+
+        async with aiohttp.ClientSession() as http:
+            while self.running:
+                await asyncio.sleep(ALERT_POLL_INTERVAL_SECONDS)
+                try:
+                    async with http.get(pending_url, params={"collector_name": self.collector_name}) as resp:
+                        if resp.status != 200:
+                            continue
+                        alerts = await resp.json()
+
+                    for alert in alerts:
+                        alert_id = alert["id"]
+                        message = json.dumps({
+                            "type": "high_ping_alert",
+                            "value": alert["value"],
+                            "threshold": alert["threshold"],
+                            "unit": alert["unit"],
+                        })
+                        for ws in list(self._connected_clients):
+                            try:
+                                await ws.send(message)
+                            except Exception:
+                                pass
+                        if alerts:
+                            self.logger.info(
+                                "Forwarded high_ping_alert to %d client(s): value=%.1f threshold=%.1f",
+                                len(self._connected_clients), alert["value"], alert["threshold"],
+                            )
+                        async with http.post(ack_url_template.format(alert_id=alert_id)) as _:
+                            pass
+
+                except Exception as e:
+                    self.logger.debug("Alert poll error: %s", e)
+
     async def _serve(self):
         loop = asyncio.get_event_loop()
         stop = loop.create_future()
@@ -143,6 +184,8 @@ class Collector(abc.ABC):
                 self.ws_host, self.ws_port,
             )
             self.logger.info("Waiting for app connections...")
+
+            asyncio.create_task(self._alert_poll_loop())
 
             try:
                 await stop

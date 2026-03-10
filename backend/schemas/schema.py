@@ -24,6 +24,7 @@ class DataIngestResponse(BaseModel):
     collector_id: int
     graph_id: int
     data_id: int
+    session_id: str
     message: str
     message_id: Optional[str] = None  # Echo back for acknowledgment
     acknowledged: bool = True  # Confirms receipt
@@ -40,16 +41,12 @@ class ErrorResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class DataPoint(BaseModel):
-    """Schema for individual data points."""
-    id: int
-    content: float
-    timestamp_utc: datetime
-    collector_id: int
-    session_id: str
+class SimpleDataPoint(BaseModel):
+    """Extremely lightweight schema for massive data arrays, with basic labels."""
+    timestamp: float
+    value: float
 
     model_config = ConfigDict(from_attributes=True)
-
 
 
 class GraphWithDataResponse(BaseModel):
@@ -57,7 +54,37 @@ class GraphWithDataResponse(BaseModel):
     id: int
     collector_id: int
     unit: str
-    data_points: List[DataPoint]
+    session_id: str
+    data_points: List[SimpleDataPoint]
     collector_name: str
+    max_value: Optional[float] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ThresholdUpdate(BaseModel):
+    """Request schema for updating a graph's max_value threshold."""
+    max_value: Optional[float]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AlertCreate(BaseModel):
+    """Request schema for creating an alert."""
+    collector_name: str
+    unit: str
+    value: float
+    threshold: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AlertResponse(BaseModel):
+    """Response schema for alerts."""
+    id: int
+    collector_name: str
+    unit: str
+    value: float
+    threshold: float
 
     model_config = ConfigDict(from_attributes=True)

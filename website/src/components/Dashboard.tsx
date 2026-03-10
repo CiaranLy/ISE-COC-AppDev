@@ -23,6 +23,7 @@ function Dashboard() {
     const blockingStartRef = useRef<number | null>(null);
     const previousOverflowRef = useRef<string | null>(null);
     const desiredSessionCountRef = useRef<number>(3);
+    const fetchIdRef = useRef<number>(0);
 
     const countUniqueSessions = (items: Graph[]): number => {
         const seen = new Set<string>();
@@ -33,10 +34,14 @@ function Dashboard() {
     const SESSIONS_PER_PAGE = 3;
 
     const loadGraphs = useCallback(async () => {
+        const currentFetchId = ++fetchIdRef.current;
         try {
             const desiredSessionCount = Math.max(desiredSessionCountRef.current || 0, SESSIONS_PER_PAGE);
 
             const data = await fetchGraphs(0, desiredSessionCount, activeCollector || undefined);
+
+            if (currentFetchId !== fetchIdRef.current) return;
+
             setGraphs(data);
 
             const loadedSessions = countUniqueSessions(data);
@@ -46,6 +51,8 @@ function Dashboard() {
             setLastUpdated(new Date());
             setError(null);
         } catch (err) {
+            if (currentFetchId !== fetchIdRef.current) return;
+
             if (err instanceof Error && err.message.includes('No graphs available for this page')) {
                 // Backend returns 404 when there are no graphs for this page.
                 // For the main load, treat this as "no data" instead of a hard error.
@@ -57,7 +64,9 @@ function Dashboard() {
                 setError(err instanceof Error ? err.message : 'Failed to load data');
             }
         } finally {
-            setLoading(false);
+            if (currentFetchId === fetchIdRef.current) {
+                setLoading(false);
+            }
         }
     }, [activeCollector]);
 
@@ -236,84 +245,86 @@ function Dashboard() {
             )}
 
             <main className="dashboard-content">
-                {loading && graphs.length === 0 ? (
-                    <div className="loading-container">
-                        <div className="pong-loader">
-                            <div className="loader-paddle left"></div>
-                            <div className="loader-ball"></div>
-                            <div className="loader-paddle right"></div>
-                        </div>
-                        <p>Loading match data...</p>
+                <div className="dashboard-tabs-container">
+                    <div className="dashboard-tabs">
+                        {allCollectors.map(collector => (
+                            <button
+                                key={collector.name}
+                                className={`tab-button ${activeCollector === collector.name ? 'active' : ''}`}
+                                onClick={() => handleTabClick(collector.name)}
+                            >
+                                <span className="collector-icon">🏓</span>
+                                {collector.name}
+                            </button>
+                        ))}
                     </div>
-                ) : graphs.length === 0 ? (
-                    <div className="empty-state">
-                        <div className="empty-icon">🏓</div>
-                        <h2>No Match Data Yet</h2>
-                        <p>Start a game to see analytics appear here automatically.</p>
-                    </div>
-                ) : (
-                    <div className="dashboard-tabs-container">
-                        <div className="dashboard-tabs">
-                            {allCollectors.map(collector => (
-                                <button
-                                    key={collector.name}
-                                    className={`tab-button ${activeCollector === collector.name ? 'active' : ''}`}
-                                    onClick={() => handleTabClick(collector.name)}
-                                >
-                                    <span className="collector-icon">🏓</span>
-                                    {collector.name}
-                                </button>
-                            ))}
-                        </div>
 
-                        <div className="tab-content">
-                            {Object.entries(sessionsForActive).map(([sessionId, sessionGraphs], sIdx) => (
-                                <div key={sessionId} className="session-section">
-                                    <div className="session-header">
-                                        <h2 className="session-title">Session</h2>
-                                        <span className="session-id-badge">{sessionId}</span>
+                    <div className="tab-content">
+                        {loading && graphs.length === 0 ? (
+                            <div className="loading-container">
+                                <div className="pong-loader">
+                                    <div className="loader-paddle left"></div>
+                                    <div className="loader-ball"></div>
+                                    <div className="loader-paddle right"></div>
+                                </div>
+                                <p>Loading match data...</p>
+                            </div>
+                        ) : graphs.length === 0 ? (
+                            <div className="empty-state">
+                                <div className="empty-icon">🏓</div>
+                                <h2>No Match Data Yet</h2>
+                                <p>This collector doesn't have any match data yet.</p>
+                            </div>
+                        ) : (
+                            <>
+                                {Object.entries(sessionsForActive).map(([sessionId, sessionGraphs], sIdx) => (
+                                    <div key={sessionId} className="session-section">
+                                        <div className="session-header">
+                                            <h2 className="session-title">Session</h2>
+                                            <span className="session-id-badge">{sessionId}</span>
+                                        </div>
+                                        <div className="graphs-grid">
+                                            {sessionGraphs.map((graph, i) => (
+                                                <GraphCard
+                                                    key={graph.id}
+                                                    graph={graph}
+                                                    colorIndex={i}
+                                                />
+                                            ))}
+                                        </div>
+                                        {/* Don't show net divider after the last session */}
+                                        {sIdx < Object.keys(sessionsForActive).length - 1 && (
+                                            <div className="net-divider"></div>
+                                        )}
                                     </div>
-                                    <div className="graphs-grid">
-                                        {sessionGraphs.map((graph, i) => (
-                                            <GraphCard
-                                                key={graph.id}
-                                                graph={graph}
-                                                colorIndex={i}
-                                            />
-                                        ))}
-                                    </div>
-                                    {/* Don't show net divider after the last session */}
-                                    {sIdx < Object.keys(sessionsForActive).length - 1 && (
-                                        <div className="net-divider"></div>
+                                ))}
+
+                                <div className="pagination-status">
+                                    {loadingMore && (
+                                        <div className="loading-more">
+                                            <div className="spinner" />
+                                            <span>Loading more sessions...</span>
+                                        </div>
+                                    )}
+                                    {!loadingMore && hasMoreSessions && (
+                                        <button
+                                            type="button"
+                                            className="load-more-button"
+                                            onClick={loadMoreSessions}
+                                        >
+                                            Load more sessions
+                                        </button>
+                                    )}
+                                    {!loadingMore && !hasMoreSessions && (
+                                        <div className="no-more-sessions">
+                                            <span>All sessions loaded.</span>
+                                        </div>
                                     )}
                                 </div>
-                            ))}
-
-                            <div className="pagination-status">
-                                {loadingMore && (
-                                    <div className="loading-more">
-                                        <div className="spinner" />
-                                        <span>Loading more sessions...</span>
-                                    </div>
-                                )}
-                                {!loadingMore && hasMoreSessions && (
-                                    <button
-                                        type="button"
-                                        className="load-more-button"
-                                        onClick={loadMoreSessions}
-                                    >
-                                        Load more sessions
-                                    </button>
-                                )}
-                                {!loadingMore && !hasMoreSessions && (
-                                    <div className="no-more-sessions">
-                                        <span>All sessions loaded.</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                            </>
+                        )}
                     </div>
-                )}
+                </div>
             </main>
 
             <footer className="dashboard-footer">

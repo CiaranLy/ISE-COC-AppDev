@@ -87,18 +87,7 @@ async def aggregate_data(
     collector = await collector_repo.find_by_display_name(data.collector_name)
 
     if not collector:
-        try:
-            collector = await collector_repo.create(display_name=data.collector_name)
-        except IntegrityError:
-            await session.rollback()
-            # Concurrent request may have created it; retry find with backoff
-            for attempt in range(5):
-                await asyncio.sleep(0.05 * (attempt + 1))
-                collector = await collector_repo.find_by_display_name(data.collector_name)
-                if collector:
-                    break
-            if not collector:
-                raise
+        collector = await collector_repo.create(display_name=data.collector_name)
 
     graph_repo = GraphRepository(session)
     graph = await graph_repo.find_by_collector_unit_and_session(collector.id, data.unit, data.session_id)

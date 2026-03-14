@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.pong.mobile.Constants
 
-@Database(entities = [MatchResult::class], version = 1, exportSchema = false)
+@Database(entities = [MatchResult::class], version = 2, exportSchema = false)
 abstract class MatchDatabase : RoomDatabase() {
     abstract fun matchResultDao(): MatchResultDao
 
@@ -19,7 +19,7 @@ abstract class MatchDatabase : RoomDatabase() {
                     context.applicationContext,
                     MatchDatabase::class.java,
                     Constants.DATABASE_NAME
-                ).build().also { INSTANCE = it }
+                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
             }
         }
     }

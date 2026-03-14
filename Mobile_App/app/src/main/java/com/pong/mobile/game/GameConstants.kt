@@ -5,7 +5,7 @@ object GameConstants {
     const val PADDLE_SPEED = 550f
     const val AI_DIFFICULTY = 0.8f
     const val BALL_ACCELERATION_FACTOR = 1.1f
-    const val WINNING_SCORE = 40
+    const val WINNING_SCORE = 10
     const val BOUNCE_ANGLE_MULTIPLIER = 1.2f
     const val INITIAL_BALL_VELOCITY_X = 240f
     const val INITIAL_BALL_VELOCITY_Y = 120f

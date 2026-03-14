@@ -50,6 +50,8 @@ object Constants {
     const val UI_MATCHMAKING_WAITING = "Finding opponent..."
     const val UI_MATCH_HISTORY_TITLE = "Match History"
     const val UI_MATCH_HISTORY_EMPTY = "No matches played yet."
+    const val UI_MATCH_HISTORY_SYNCING = "Syncing matches from cloud..."
+    const val UI_MATCH_DETAILS_TITLE = "Match Details"
     const val UI_MATCH_RESULT_WIN = "Win"
     const val UI_MATCH_RESULT_LOSS = "Loss"
     const val DEVICE_ID_UNKNOWN = "unknown"

@@ -18,8 +18,7 @@ object MainMenu {
         onSingleplayerClick: () -> Unit,
         onFindMatchClick: () -> Unit,
         onSettingsClick: () -> Unit,
-        onMatchHistoryClick: () -> Unit,
-        isFindingMatch: Boolean = false
+        onMatchHistoryClick: () -> Unit
     ) {
         val singleplayerButton = ButtonFactory.createStandardButton(
             text = Constants.UI_BUTTON_SINGLEPLAYER,
@@ -60,9 +59,6 @@ object MainMenu {
                 ButtonComposable(buttonSpec = findMatchButton)
                 ButtonComposable(buttonSpec = settingsButton)
                 ButtonComposable(buttonSpec = matchHistoryButton)
-                if (isFindingMatch) {
-                    Text(text = Constants.UI_MATCHMAKING_WAITING)
-                }
             }
         }
     }

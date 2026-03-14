@@ -1,9 +1,6 @@
 package com.pong.mobile.ui
 
 import android.util.Log
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -14,7 +11,6 @@ import com.pong.mobile.Constants
 import com.pong.mobile.config.Config
 import com.pong.mobile.game.server.AIClient
 import com.pong.mobile.game.server.network.NetworkGameServer
-import com.pong.mobile.matchmaking.MatchmakingClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,8 +21,11 @@ object Routes {
     const val MAIN_MENU = "main_menu"
     const val SETTINGS = "settings"
     const val MATCH_HISTORY = "match_history"
+    const val MATCH_DETAIL = "match_detail/{id}"
+    const val QUEUEING = "queueing"
     const val GAME = "game/{host}/{port}/{gameMode}"
 
+    fun matchDetail(id: Int) = "match_detail/$id"
     fun game(host: String, port: Int, gameMode: String) = "game/$host/$port/$gameMode"
 }
 
@@ -35,22 +34,7 @@ fun Navigation() {
     val navController = rememberNavController()
     var localNetworkServer by remember { mutableStateOf<NetworkGameServer?>(null) }
     var aiClient by remember { mutableStateOf<AIClient?>(null) }
-    var isFindingMatch by remember { mutableStateOf(false) }
-    var showMatchmakingError by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
-
-    if (showMatchmakingError) {
-        AlertDialog(
-            onDismissRequest = { showMatchmakingError = false },
-            title = { Text(Constants.UI_ERROR_DIALOG_TITLE) },
-            text = { Text(Constants.ERROR_MESSAGE_MATCHMAKING_CONNECT) },
-            confirmButton = {
-                Button(onClick = { showMatchmakingError = false }) {
-                    Text(Constants.UI_ERROR_DIALOG_BUTTON)
-                }
-            }
-        )
-    }
 
     NavHost(navController = navController, startDestination = Routes.MAIN_MENU) {
         composable(Routes.MAIN_MENU) {
@@ -106,29 +90,21 @@ fun Navigation() {
                         withContext(Dispatchers.Main) { aiClient = aiClientInstance }
                     }
                 },
-                onFindMatchClick = findMatch@{
-                    if (isFindingMatch) return@findMatch
-                    isFindingMatch = true
-                    coroutineScope.launch(Dispatchers.IO) {
-                        val endpoint = MatchmakingClient(
-                            Config.current.matchmakingHost,
-                            Config.current.matchmakingPort
-                        ).findMatch()
-                        withContext(Dispatchers.Main) { isFindingMatch = false }
-                        if (endpoint == null) {
-                            withContext(Dispatchers.Main) { showMatchmakingError = true }
-                            return@launch
-                        }
-                        withContext(Dispatchers.Main) {
-                            navController.navigate(
-                                Routes.game(endpoint.host, endpoint.port, "multiplayer")
-                            )
-                        }
-                    }
+                onFindMatchClick = {
+                    navController.navigate(Routes.QUEUEING)
                 },
                 onSettingsClick = { navController.navigate(Routes.SETTINGS) },
-                onMatchHistoryClick = { navController.navigate(Routes.MATCH_HISTORY) },
-                isFindingMatch = isFindingMatch
+                onMatchHistoryClick = { navController.navigate(Routes.MATCH_HISTORY) }
+            )
+        }
+
+        composable(Routes.QUEUEING) {
+            QueueingScreen.Content(
+                onBack = { navController.popBackStack() },
+                onMatchFound = { endpoint ->
+                    navController.popBackStack() // Remove queueing screen from history
+                    navController.navigate(Routes.game(endpoint.host, endpoint.port, "multiplayer"))
+                }
             )
         }
 
@@ -137,7 +113,21 @@ fun Navigation() {
         }
 
         composable(Routes.MATCH_HISTORY) {
-            MatchHistoryScreen.Content(onBack = { navController.popBackStack() })
+            MatchHistoryScreen.Content(
+                onBack = { navController.popBackStack() },
+                onMatchClick = { id -> navController.navigate(Routes.matchDetail(id)) }
+            )
+        }
+
+        composable(
+            route = Routes.MATCH_DETAIL,
+            arguments = listOf(navArgument("id") { type = NavType.IntType })
+        ) { backStackEntry ->
+            val id = backStackEntry.arguments?.getInt("id") ?: 0
+            MatchDetailScreen.Content(
+                matchId = id,
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(

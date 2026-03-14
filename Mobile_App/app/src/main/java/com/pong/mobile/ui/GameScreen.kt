@@ -197,7 +197,8 @@ object GameScreen {
                                                     won = won,
                                                     timestamp = System.currentTimeMillis(),
                                                     matchId = currentState.matchId
-                                                )
+                                                ),
+                                                deviceId
                                             )
                                         }
                                     }
@@ -446,13 +447,20 @@ object GameScreen {
                         val gameOverMessage =
                                 if (playerWon) Constants.UI_GAME_OVER_WIN
                                 else Constants.UI_GAME_OVER_LOSE
-                        Text(
-                                text = gameOverMessage,
-                                color = Color.White,
-                                fontSize = 32.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(16.dp)
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                    text = gameOverMessage,
+                                    color = Color.White,
+                                    fontSize = 32.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(16.dp)
+                            )
+                            // Prompt: Add back buttons to the game over screen and the settings page
+                            Button(onClick = onBackToMenu, modifier = Modifier.padding(top = 8.dp)) {
+                                Text(Constants.UI_BUTTON_BACK)
+                            }
+                        }
+                        // End Prompt
                     }
 
                     Text(

@@ -33,12 +33,22 @@ object SettingsScreen {
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = Constants.UI_SETTINGS_TITLE,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+            // Prompt: Add back buttons to the game over screen and the settings page
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(onClick = onBack) {
+                    Text(Constants.UI_BUTTON_BACK)
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = Constants.UI_SETTINGS_TITLE,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            // End Prompt
 
             OutlinedTextField(
                 value = gameServerHost,
@@ -85,9 +95,6 @@ object SettingsScreen {
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onBack) {
-                    Text(Constants.UI_BUTTON_BACK)
-                }
                 Button(onClick = {
                     val portNum = gameServerPort.toIntOrNull()
                     val mmPortNum = matchmakingPort.toIntOrNull()

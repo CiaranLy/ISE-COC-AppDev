@@ -11,14 +11,14 @@ import kotlinx.serialization.json.jsonPrimitive
 @Serializable
 sealed class MatchmakingMessage {
     @Serializable
-    data class QueueJoin(val messageType: String = "QUEUE_JOIN") : MatchmakingMessage()
+    data class QueueJoin(val messageType: String = Constants.MATCHMAKING_MSG_QUEUE_JOIN) : MatchmakingMessage()
 
     @Serializable
-    data class QueueWaiting(val messageType: String = "QUEUE_WAITING") : MatchmakingMessage()
+    data class QueueWaiting(val messageType: String = Constants.MATCHMAKING_MSG_QUEUE_WAITING) : MatchmakingMessage()
 
     @Serializable
     data class GameReady(
-        val messageType: String = "GAME_READY",
+        val messageType: String = Constants.MATCHMAKING_MSG_GAME_READY,
         val host: String,
         val port: Int,
         val sessionId: String = ""
@@ -26,7 +26,7 @@ sealed class MatchmakingMessage {
 
     @Serializable
     data class MatchmakingError(
-        val messageType: String = "MATCHMAKING_ERROR",
+        val messageType: String = Constants.MATCHMAKING_MSG_MATCHMAKING_ERROR,
         val error: String
     ) : MatchmakingMessage()
 }

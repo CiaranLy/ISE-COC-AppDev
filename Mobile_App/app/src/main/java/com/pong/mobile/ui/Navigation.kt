@@ -87,6 +87,16 @@ fun Navigation() {
 
                         kotlinx.coroutines.delay(config.serverStartupDelayMs)
 
+                        // Navigate human player first so they become Player1
+                        withContext(Dispatchers.Main) {
+                            navController.navigate(
+                                Routes.game(Constants.LOCALHOST, config.gameServerPort, "singleplayer")
+                            )
+                        }
+
+                        // Delay starting AI client to ensure human connects first
+                        kotlinx.coroutines.delay(config.aiClientStartupDelayMs + 1000L)
+
                         val aiClientInstance = AIClient(
                             host = Constants.LOCALHOST,
                             port = config.gameServerPort,
@@ -94,14 +104,6 @@ fun Navigation() {
                         )
                         aiClientInstance.start()
                         withContext(Dispatchers.Main) { aiClient = aiClientInstance }
-
-                        kotlinx.coroutines.delay(config.aiClientStartupDelayMs)
-
-                        withContext(Dispatchers.Main) {
-                            navController.navigate(
-                                Routes.game(Constants.LOCALHOST, config.gameServerPort, "singleplayer")
-                            )
-                        }
                     }
                 },
                 onFindMatchClick = findMatch@{

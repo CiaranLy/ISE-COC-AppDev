@@ -53,7 +53,7 @@ object SettingsScreen {
             OutlinedTextField(
                 value = gameServerPort,
                 onValueChange = { gameServerPort = it },
-                label = { Text("Game server port") },
+                label = { Text(Constants.UI_SETTINGS_GAME_SERVER_PORT) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )

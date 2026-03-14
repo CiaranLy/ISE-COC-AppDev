@@ -219,7 +219,7 @@ class NetworkGameClient(
                 val line = withContext(Dispatchers.IO) {
                     messageQueue.take()
                 }
-                if (SessionStartPayload.isSessionStart(line) || !line.contains("\"messageType\"")) {
+                if (SessionStartPayload.isSessionStart(line) || !line.contains("\"${Constants.NETWORK_MSG_FIELD_MESSAGE_TYPE}\"")) {
                     continue
                 }
                 val message = MessageSerializer.deserialize(line)

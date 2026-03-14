@@ -6,9 +6,9 @@ import com.pong.mobile.Constants
 data class Config(
         val gameWidth: Float = Constants.GAME_WIDTH,
         val gameHeight: Float = Constants.GAME_HEIGHT,
-        val gameServerHost: String = "10.0.2.2",
+        val gameServerHost: String = Constants.DEFAULT_HOST,
         val gameServerPort: Int = Constants.DEFAULT_SERVER_PORT,
-        val matchmakingHost: String = "10.0.2.2",
+        val matchmakingHost: String = Constants.DEFAULT_HOST,
         val matchmakingPort: Int = Constants.MATCHMAKING_DEFAULT_PORT,
         val serverStartupDelayMs: Long = 1000L,
         val aiClientStartupDelayMs: Long = 500L,
@@ -22,8 +22,8 @@ data class Config(
         val playerClientStartRetryDelayMs: Long = 200L,
         val matchmakingGameServerPortRangeStart: Int =
                 Constants.MATCHMAKING_GAME_SERVER_PORT_RANGE_START,
-        val telemetryHost: String = "10.0.2.2",
-        val telemetryPort: Int = 6790
+        val telemetryHost: String = Constants.DEFAULT_HOST,
+        val telemetryPort: Int = Constants.TELEMETRY_DEFAULT_PORT
 ) {
     companion object {
         private const val PREFS_NAME = "pong_settings"

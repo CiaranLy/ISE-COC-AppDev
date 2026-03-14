@@ -85,15 +85,12 @@ object GameScreen {
         var showErrorDialog by remember { mutableStateOf(false) }
         var isGameRunning by remember { mutableStateOf(false) }
         var matchSaved by remember { mutableStateOf(false) }
+        var localPlayerId by remember { mutableStateOf<PlayerId?>(null) }
 
         val telemetryService = remember { TelemetryService() }
 
-        val localPlayerId = remember {
-            try { gameServer.getLocalPlayerId() } catch (e: Exception) { null }
-        }
-
         val deviceId = remember {
-            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: Constants.DEVICE_ID_UNKNOWN
         }
 
         LaunchedEffect(Unit) {
@@ -108,19 +105,19 @@ object GameScreen {
                     }
                 }
 
-                // Session start: match desktop - send as soon as we have session ID (after connect)
+                localPlayerId = try { gameServer.getLocalPlayerId() } catch (e: Exception) { null }
+                Log.i(TAG, "Local player ID assigned: $localPlayerId")
+
                 val sessionId = gameServer.getSessionId()
-                val lpId = try { gameServer.getLocalPlayerId() } catch (e: Exception) { null }
-                if (sessionId.isNotBlank() && lpId != null) {
+                if (sessionId.isNotBlank() && localPlayerId != null) {
                     telemetryService.startSession(
                         matchId = sessionId,
                         gameMode = gameMode,
-                        playerId = lpId.name,
+                        playerId = localPlayerId!!.name,
                         deviceId = deviceId
                     )
                 }
 
-                // Start game with retry logic (moved from Navigation)
                 var gameStarted = false
                 var retries = 0
                 val maxRetries = config.maxPlayerClientStartRetries
@@ -187,7 +184,6 @@ object GameScreen {
                                         val lpId = localPlayerId ?: PlayerId.Player1
                                         telemetryService.endSession(currentState, lpId)
 
-                                        // Save match result to Room (only once)
                                         if (!matchSaved) {
                                             matchSaved = true
                                             val playerScore = getScoreForPlayer(lpId, currentState)
@@ -252,7 +248,7 @@ object GameScreen {
             )
         }
 
-        LaunchedEffect(isGameRunning) {
+        LaunchedEffect(isGameRunning, localPlayerId) {
             if (isGameRunning && localPlayerId != null) {
                 var lastVelocityY: Float? = null
                 while (isGameRunning) {
@@ -261,7 +257,7 @@ object GameScreen {
                         val info = viewportInfo
 
                         if (touchGameY != null && currentState != null && info != null) {
-                            val paddle = getPaddleForPlayer(localPlayerId, currentState)
+                            val paddle = getPaddleForPlayer(localPlayerId!!, currentState)
                             val paddleCenterY = PaddleUtils.calculatePaddleCenterY(paddle)
                             val distanceFromPaddleCenter = touchGameY!! - paddleCenterY
                             val unscaledDirection =
@@ -274,10 +270,10 @@ object GameScreen {
                             val velocityY = PaddleUtils.calculateVelocityY(direction)
 
                             if (lastVelocityY == null || lastVelocityY != velocityY) {
-                                val currentPaddle = getPaddleForPlayer(localPlayerId, currentState)
+                                val currentPaddle = getPaddleForPlayer(localPlayerId!!, currentState)
                                 val updatedPaddle = currentPaddle.copy(velocityY = velocityY)
                                 withContext(Dispatchers.IO) {
-                                    gameServer.updatePaddle(localPlayerId, updatedPaddle)
+                                    gameServer.updatePaddle(localPlayerId!!, updatedPaddle)
                                 }
                                 lastVelocityY = velocityY
                             }
@@ -287,13 +283,13 @@ object GameScreen {
                             ) {
                                 val cs = gameState
                                 if (cs != null) {
-                                    val currentPaddle = getPaddleForPlayer(localPlayerId, cs)
+                                    val currentPaddle = getPaddleForPlayer(localPlayerId!!, cs)
                                     val updatedPaddle =
                                             currentPaddle.copy(
                                                     velocityY = PaddleUtils.NO_MOVEMENT_DIRECTION
                                             )
                                     withContext(Dispatchers.IO) {
-                                        gameServer.updatePaddle(localPlayerId, updatedPaddle)
+                                        gameServer.updatePaddle(localPlayerId!!, updatedPaddle)
                                     }
                                     lastVelocityY = PaddleUtils.NO_MOVEMENT_DIRECTION
                                 }
@@ -312,7 +308,7 @@ object GameScreen {
                 gameServer.disconnect()
                 val finalState = gameState
                 if (finalState != null && localPlayerId != null) {
-                    telemetryService.endSession(finalState, localPlayerId)
+                    telemetryService.endSession(finalState, localPlayerId!!)
                 }
                 telemetryService.close()
             }

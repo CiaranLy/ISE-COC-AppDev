@@ -83,7 +83,8 @@ class MatchmakingServer(
             val player = QueuedPlayer(socket, reader, writer)
             queueMutex.withLock {
                 queue.add(player)
-                if (queue.size >= Constants.MAX_PLAYERS) {
+                val isQueueReadyForMatch = queue.size >= Constants.MAX_PLAYERS
+                if (isQueueReadyForMatch) {
                     val pair = queue.take(Constants.MAX_PLAYERS).also { queue.removeAll(it) }
                     scope.launch { launchGameForPair(pair) }
                 }

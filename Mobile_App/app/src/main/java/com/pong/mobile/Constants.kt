@@ -19,6 +19,11 @@ object Constants {
     const val INITIAL_PLAYER_SCORE = 0
 
     const val LOCALHOST = "localhost"
+    const val DEFAULT_HOST = "10.0.2.2"
+    const val TELEMETRY_DEFAULT_PORT = 6790
+
+    const val DATABASE_NAME = "match_history.db"
+    const val TABLE_MATCH_RESULTS = "match_results"
 
     const val UI_LOADING_TEXT = "Loading..."
     const val UI_ERROR_DIALOG_TITLE = "Error"
@@ -37,11 +42,17 @@ object Constants {
     const val UI_BUTTON_SAVE = "Save"
     const val UI_SETTINGS_TITLE = "Settings"
     const val UI_SETTINGS_SERVER_ADDRESS = "Server Address"
+    const val UI_SETTINGS_GAME_SERVER_PORT = "Game server port"
     const val UI_SETTINGS_MATCHMAKING_HOST = "Matchmaking server"
     const val UI_SETTINGS_MATCHMAKING_PORT = "Matchmaking port"
     const val UI_SETTINGS_SAVED = "Settings saved."
     const val UI_SETTINGS_PORT_INVALID = "Port must be a number (1\u201365535)."
     const val UI_MATCHMAKING_WAITING = "Finding opponent..."
+    const val UI_MATCH_HISTORY_TITLE = "Match History"
+    const val UI_MATCH_HISTORY_EMPTY = "No matches played yet."
+    const val UI_MATCH_RESULT_WIN = "Win"
+    const val UI_MATCH_RESULT_LOSS = "Loss"
+    const val DEVICE_ID_UNKNOWN = "unknown"
 
     const val ERROR_MESSAGE_GAME_NOT_STARTED = "Game not started"
     const val ERROR_MESSAGE_STARTING_GAME = "Error starting game"

@@ -101,7 +101,8 @@ class GameEngine(
         var newVelY = ball.velocityY
         var wallBounceCount = 0
 
-        if (newY <= ball.radius || newY >= gameHeight - ball.radius) {
+        val isWallCollision = newY <= ball.radius || newY >= gameHeight - ball.radius
+        if (isWallCollision) {
             newVelY = -newVelY
             newY = newY.coerceIn(ball.radius, gameHeight - ball.radius)
             wallBounceCount = 1
@@ -131,11 +132,12 @@ class GameEngine(
         var player1PaddleHit = false
         var player2PaddleHit = false
 
-        if (ball.x - ball.radius <= player1Paddle.x + player1Paddle.width &&
+        val isCollidingWithPlayer1 = ball.x - ball.radius <= player1Paddle.x + player1Paddle.width &&
             ball.x + ball.radius >= player1Paddle.x &&
             ball.y - ball.radius <= player1Paddle.y + player1Paddle.height &&
             ball.y + ball.radius >= player1Paddle.y
-        ) {
+
+        if (isCollidingWithPlayer1) {
             paddleCollisionCount = 1
             player1PaddleHit = true
             val paddleCenterY = PaddleUtils.calculatePaddleCenterY(player1Paddle)
@@ -151,11 +153,12 @@ class GameEngine(
             )
         }
 
-        if (ball.x + ball.radius >= player2Paddle.x &&
+        val isCollidingWithPlayer2 = ball.x + ball.radius >= player2Paddle.x &&
             ball.x - ball.radius <= player2Paddle.x + player2Paddle.width &&
             ball.y - ball.radius <= player2Paddle.y + player2Paddle.height &&
             ball.y + ball.radius >= player2Paddle.y
-        ) {
+
+        if (isCollidingWithPlayer2) {
             paddleCollisionCount = 1
             player2PaddleHit = true
             val paddleCenterY = PaddleUtils.calculatePaddleCenterY(player2Paddle)
@@ -171,7 +174,8 @@ class GameEngine(
             )
         }
 
-        if (ball.x < 0) {
+        val isOutOfBoundsLeft = ball.x < 0
+        if (isOutOfBoundsLeft) {
             player2Score++
             updatedBall = ball.copy(
                 x = gameWidth / GameConstants.CENTER_DIVISOR,
@@ -182,7 +186,8 @@ class GameEngine(
             newFreezeTime = currentTimeMs + GameConstants.POINT_START_BALL_FREEZE_DURATION_MS
         }
 
-        if (ball.x > gameWidth) {
+        val isOutOfBoundsRight = ball.x > gameWidth
+        if (isOutOfBoundsRight) {
             player1Score++
             updatedBall = ball.copy(
                 x = gameWidth / GameConstants.CENTER_DIVISOR,
